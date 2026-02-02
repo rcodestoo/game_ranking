@@ -9,6 +9,6 @@ DATA_DIR = BASE_DIR / 'src' / 'data'
 
 # Define files
 CSV_STEAM = RAW_DIR / 'raw_steam.csv'
-CSV_NON_STEAM = RAW_DIR / 'raw_steam.csv'
+CSV_NON_STEAM = RAW_DIR / 'raw_non_steam.csv'
 DEV_LIST = DATA_DIR / 'developer_list.xlsx'
 GENRE_LIST = DATA_DIR / 'genre_list.xlsx'

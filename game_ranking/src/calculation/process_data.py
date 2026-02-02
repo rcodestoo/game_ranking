@@ -10,10 +10,20 @@ genre_list = pd.read_excel(GENRE_LIST)
 
 #FUNCTION TO LOAD DATA
 @st.cache_data
-def load_data(steam_report, non_steam_report, developer_list=developer_list, genre_list=genre_list):
-    # Replace with your actual pre-processed CSV filename
-    steam_df = pd.read_csv(steam_report)
-    nonsteam_df = pd.read_csv(non_steam_report)
+def load_data(steam_report=None, non_steam_report=None, steam_df=None, nonsteam_df=None, developer_list=developer_list, genre_list=genre_list):
+    """
+    Load data from files or use provided DataFrames.
+    
+    Args:
+        steam_report: Path to Steam CSV (used if steam_df is None)
+        non_steam_report: Path to Non-Steam CSV (used if nonsteam_df is None)
+        steam_df: Pre-loaded Steam DataFrame (takes precedence)
+        nonsteam_df: Pre-loaded Non-Steam DataFrame (takes precedence)
+    """
+    if steam_df is None:
+        steam_df = pd.read_csv(steam_report)
+    if nonsteam_df is None:
+        nonsteam_df = pd.read_csv(non_steam_report)
     return steam_df, nonsteam_df, developer_list, genre_list
 
 #CLEANING DEV AND GENRE LIST
