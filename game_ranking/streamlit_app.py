@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import io
 import datetime as dt
 from src.calculation.process_data import clean_dev_genre_list, flagging, calculate_developer_weighted_points, load_data, calculate_follower_weighted_points, calculate_developer_weighted_points
 from config import CSV_STEAM, CSV_NON_STEAM
@@ -34,102 +35,119 @@ if "steam_cleaned" not in st.session_state:
     st.session_state.steam_cleaned = False
 if "nonsteam_cleaned" not in st.session_state:
     st.session_state.nonsteam_cleaned = False
+if "uploaded_steam_bytes" not in st.session_state:
+    st.session_state.uploaded_steam_bytes = None
+if "uploaded_steam_name" not in st.session_state:
+    st.session_state.uploaded_steam_name = None
+if "uploaded_nonsteam_bytes" not in st.session_state:
+    st.session_state.uploaded_nonsteam_bytes = None
+if "uploaded_nonsteam_name" not in st.session_state:
+    st.session_state.uploaded_nonsteam_name = None
 if "dev_list" not in st.session_state:
     try:
         _, _, st.session_state.dev_list, st.session_state.genre_list = load_data(CSV_STEAM, CSV_NON_STEAM)
     except:
         pass
 
+# Helper: load defaults into session state
+def load_defaults():
+    df_steam, df_nonsteam, dev_list, genre_list = load_data(CSV_STEAM, CSV_NON_STEAM)
+    df_steam = clean_dev_genre_list(df_steam)
+    df_steam = flagging(df_steam)
+    st.session_state.df_steam = df_steam
+    st.session_state.steam_source = "default file"
+    st.session_state.steam_cleaned = True
+    st.session_state.df_nonsteam = df_nonsteam
+    st.session_state.nonsteam_source = "default file"
+    st.session_state.nonsteam_cleaned = True
+    st.session_state.dev_list = dev_list
+    st.session_state.genre_list = genre_list
+    # Clear cached upload bytes
+    st.session_state.uploaded_steam_bytes = None
+    st.session_state.uploaded_steam_name = None
+    st.session_state.uploaded_nonsteam_bytes = None
+    st.session_state.uploaded_nonsteam_name = None
+
+# File uploaders
 uploaded_steam = st.sidebar.file_uploader("Upload Steam CSV", type="csv", key="steam_upload")
 uploaded_nonsteam = st.sidebar.file_uploader("Upload Non-Steam CSV", type="csv", key="nonsteam_upload")
 
+if uploaded_steam and uploaded_steam.name != st.session_state.uploaded_steam_name:
+    st.session_state.uploaded_steam_bytes = uploaded_steam.getvalue()
+    st.session_state.uploaded_steam_name = uploaded_steam.name
+
+if uploaded_nonsteam and uploaded_nonsteam.name != st.session_state.uploaded_nonsteam_name:
+    st.session_state.uploaded_nonsteam_bytes = uploaded_nonsteam.getvalue()
+    st.session_state.uploaded_nonsteam_name = uploaded_nonsteam.name
+
 # Preview and load buttons for Steam
-if uploaded_steam:
+if st.session_state.uploaded_steam_bytes:
     with st.sidebar.expander("👀 Preview Steam File"):
-        preview_steam = pd.read_csv(uploaded_steam)
+        preview_steam = pd.read_csv(io.BytesIO(st.session_state.uploaded_steam_bytes))
         st.dataframe(preview_steam.head(3), use_container_width=True)
         st.caption(f"Rows: {len(preview_steam)}, Columns: {len(preview_steam.columns)}")
     
     if st.sidebar.button("📥 Load Steam Data", key="load_steam_btn"):
         try:
-            # Reset file pointer to ensure file is read from the beginning
-            uploaded_steam.seek(0)
-            steam_df_upload = pd.read_csv(uploaded_steam)
+            steam_df_upload = pd.read_csv(io.BytesIO(st.session_state.uploaded_steam_bytes))
             steam_required_cols = ['Name', 'FollowerCount', 'Developers', 'Genres', 'ReleaseDate']
             steam_missing = [col for col in steam_required_cols if col not in steam_df_upload.columns]
             if steam_missing:
                 st.sidebar.error(f"Missing columns: {', '.join(steam_missing)}")
             else:
-                #clean data and store in session state
+                # Clean the data ONCE before storing in session state
                 steam_df_upload = clean_dev_genre_list(steam_df_upload)
                 steam_df_upload = flagging(steam_df_upload)
-
+                
                 st.session_state.df_steam = steam_df_upload
-                st.session_state.steam_source = uploaded_steam.name
-                #flagging for cleaned data to track if data has been cleaned
+                st.session_state.steam_source = st.session_state.uploaded_steam_name
                 st.session_state.steam_cleaned = True
-                st.sidebar.success(f"✅ Loaded {uploaded_steam.name}")
+                st.sidebar.success(f"✅ Loaded {st.session_state.uploaded_steam_name}")
         except Exception as e:
             st.sidebar.error(f"Error loading file: {e}")
 else:
     st.sidebar.info("No Steam CSV uploaded. Using default.")
 
 # Preview and load buttons for Non-Steam
-if uploaded_nonsteam:
+if st.session_state.uploaded_nonsteam_bytes:
     with st.sidebar.expander("👀 Preview Non-Steam File"):
-        #Reset file pointer to ensure file is read from the beginning
-        uploaded_nonsteam.seek(0)
-        preview_nonsteam = pd.read_csv(uploaded_nonsteam)
+        preview_nonsteam = pd.read_csv(io.BytesIO(st.session_state.uploaded_nonsteam_bytes))
         st.dataframe(preview_nonsteam.head(3), use_container_width=True)
         st.caption(f"Rows: {len(preview_nonsteam)}, Columns: {len(preview_nonsteam.columns)}")
     
     if st.sidebar.button("📥 Load Non-Steam Data", key="load_nonsteam_btn"):
         try:
-            #Reset file pointer to ensure file is read from the beginning
-            uploaded_nonsteam.seek(0)
-            nonsteam_df_upload = pd.read_csv(uploaded_nonsteam)
+            nonsteam_df_upload = pd.read_csv(io.BytesIO(st.session_state.uploaded_nonsteam_bytes))
             nonsteam_required_cols = ['Game Title', 'Developers', 'SteamStatus', 'YouTube Views']
             nonsteam_missing = [col for col in nonsteam_required_cols if col not in nonsteam_df_upload.columns]
             if nonsteam_missing:
                 st.sidebar.error(f"Missing columns: {', '.join(nonsteam_missing)}")
             else:
-                # Insert data cleaning and flagging here if needed
-                # nonsteam_df_upload = clean_dev_genre_list(nonsteam_df_upload)
-                # nonsteam_df_upload = flagging(nonsteam_df_upload)
                 st.session_state.df_nonsteam = nonsteam_df_upload
-                st.session_state.nonsteam_source = uploaded_nonsteam.name
-                #flagging for cleaned data to track if data has been cleaned
+                st.session_state.nonsteam_source = st.session_state.uploaded_nonsteam_name
                 st.session_state.nonsteam_cleaned = True
-                st.sidebar.success(f"✅ Loaded {uploaded_nonsteam.name}")
+                st.sidebar.success(f"✅ Loaded {st.session_state.uploaded_nonsteam_name}")
         except Exception as e:
             st.sidebar.error(f"Error loading file: {e}")
 else:
     st.sidebar.info("No Non-Steam CSV uploaded. Using default.")
 
+# Reset to defaults button
+st.sidebar.divider()
+if st.sidebar.button("🔄 Reset to Defaults"):
+    load_defaults()
+    st.rerun()
+
 # Load defaults if not already loaded
 try:
     if st.session_state.df_steam is None or st.session_state.df_nonsteam is None:
-        df_steam, df_nonsteam, dev_list, genre_list = load_data(CSV_STEAM, CSV_NON_STEAM)
-        if st.session_state.df_steam is None:
-            #Clean default data before storing
-            df_steam = clean_dev_genre_list(df_steam)
-            df_steam = flagging(df_steam)
-            st.session_state.df_steam = df_steam
-            st.session_state.steam_source = "default file"
-            st.session_state.steam_cleaned = True
-        if st.session_state.df_nonsteam is None:
-            #Insert necessary cleaning of default non-steam data before storing
-            st.session_state.df_nonsteam = df_nonsteam
-            st.session_state.nonsteam_source = "default file"
-            st.session_state.nonsteam_cleaned = True
-        st.session_state.dev_list = dev_list
-        st.session_state.genre_list = genre_list
+        load_defaults()
 except Exception as e:
     st.error(f"Error loading data: {e}")
     st.stop()
 
 # Retrieve data from session state
-df_steam = st.session_state.df_steam.copy()
+df_steam = st.session_state.df_steam.copy()  # Use .copy() to avoid modifying session state directly
 df_nonsteam = st.session_state.df_nonsteam.copy()
 dev_list = st.session_state.dev_list
 genre_list = st.session_state.genre_list
@@ -154,10 +172,6 @@ with tab_steam:
     # 2. Weights
     w_followers = st.sidebar.slider("Follower Weight", 0, 5, 5)
     w_developers = st.sidebar.slider("Developer Weight", 0, 5, 2)
-    
-    # # Pre-processesing Data
-    # df_steam = clean_dev_genre_list(df_steam)
-    # df_steam = flagging(df_steam)
 
     # Steam Rankings Calculation Logic
     st.info("### Current Steam Formula")
@@ -196,7 +210,7 @@ with tab_steam:
     df_steam['Final Priority Score'] = df_steam['Weighted Follower Score'] + df_steam['Weighted Dev Score']
 
     # Sorting games based on ranking
-    df_ranked = df_steam.sort_values('Final Priority Score', ascending=False)
+    df_ranked = df_steam.sort_values('Final Priority Score', ascending=False, ignore_index=True)
 
     # Display Results
     tab1, tab2 = st.tabs(["📊 Ranking Results", "🔍 Developer List"])
@@ -248,7 +262,7 @@ with tab_nonsteam:
     df_nonsteam_filter['adjusted_views'] = df_nonsteam_filter['YouTube Views'] / (1 + (df_nonsteam_filter['Days_Since_Release'] / 365))
     
     # Sorting games based on ranking
-    df_non_steam_ranked = df_nonsteam_filter.sort_values('adjusted_views', ascending=False)
+    df_non_steam_ranked = df_nonsteam_filter.sort_values('adjusted_views', ascending=False, ignore_index=True)
     
     # Display Results
     st.subheader("Top Priority Non-Steam Games")
