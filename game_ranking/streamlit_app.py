@@ -211,6 +211,7 @@ with tab_steam:
 
     # Sorting games based on ranking
     df_ranked = df_steam.sort_values('Final Priority Score', ascending=False, ignore_index=True)
+    df_ranked.index = df_ranked.index + 1
 
     # Display Results
     tab1, tab2 = st.tabs(["📊 Ranking Results", "🔍 Developer List"])
@@ -263,6 +264,7 @@ with tab_nonsteam:
     
     # Sorting games based on ranking
     df_non_steam_ranked = df_nonsteam_filter.sort_values('adjusted_views', ascending=False, ignore_index=True)
+    df_non_steam_ranked.index = df_non_steam_ranked.index + 1
     
     # Display Results
     st.subheader("Top Priority Non-Steam Games")
