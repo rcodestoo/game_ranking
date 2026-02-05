@@ -1,16 +1,17 @@
 import streamlit as st
 import pandas as pd
 import math
-from config import CSV_STEAM, DEV_LIST, GENRE_LIST
+from config import CSV_STEAM, CSV_NON_STEAM, DEV_LIST, GENRE_LIST, INVENTORY_FILE
 
 
 #LOAD DEVELOPER AND GENRE LIST
 developer_list = pd.read_excel(DEV_LIST)
 genre_list = pd.read_excel(GENRE_LIST)
+inventory = pd.read_csv(INVENTORY_FILE)
 
 #FUNCTION TO LOAD DATA
 @st.cache_data
-def load_data(steam_report=None, non_steam_report=None, steam_df=None, nonsteam_df=None, developer_list=developer_list, genre_list=genre_list):
+def load_data(steam_report=None, non_steam_report=None, steam_df=None, nonsteam_df=None, developer_list=developer_list, genre_list=genre_list, inventory=inventory):
     """
     Load data from files or use provided DataFrames.
     
@@ -24,7 +25,7 @@ def load_data(steam_report=None, non_steam_report=None, steam_df=None, nonsteam_
         steam_df = pd.read_csv(steam_report)
     if nonsteam_df is None:
         nonsteam_df = pd.read_csv(non_steam_report)
-    return steam_df, nonsteam_df, developer_list, genre_list
+    return steam_df, nonsteam_df, developer_list, genre_list, inventory
 
 #CLEANING DEV AND GENRE LIST
 def clean_dev_genre_list(df):
@@ -111,3 +112,38 @@ def calculate_developer_weighted_points(developers, developer_list=developer_lis
             missing_devs.append(developer.strip())
     avg_weighted_point = sum(dev_points) / len(dev_points) if dev_points else 1
     return avg_weighted_point, missing_devs
+
+# handle changes in inventory table
+def handle_change():
+    changes = st.session_state["game_editor"]
+    df = st.session_state.game_data.copy()
+
+    for row_idx, updates in changes["edited_rows"].items():
+        for col, new_val in updates.items():
+            df.at[row_idx, col] = new_val
+
+    # filter out placeholder/empty added rows
+    new_rows = [r for r in changes["added_rows"] if r]
+
+    if new_rows:
+        df = pd.concat(
+            [df, pd.DataFrame(new_rows, columns=df.columns)],  # keep schema
+            ignore_index=True,
+        )
+
+    # apply deletions
+    if changes["deleted_rows"]:
+        df = df.drop(index=changes["deleted_rows"]).reset_index(drop=True)
+
+    # perform the computation
+    # df["c"] = df["a"] + df["b"]
+
+    # only update if needed
+    did_change = bool(changes["edited_rows"] or new_rows or changes["deleted_rows"])
+    if did_change:
+        st.session_state.df = df
+        st.session_state.sum = int(df["Game Name"].count())
+    try:
+            df.to_csv(INVENTORY_FILE, index=True)
+    except Exception as e:
+            st.error(f"Failed to save changes to CSV: {e}")

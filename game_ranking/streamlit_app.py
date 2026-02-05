@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 import io
 import datetime as dt
-from src.calculation.process_data import clean_dev_genre_list, flagging, calculate_developer_weighted_points, load_data, calculate_follower_weighted_points, calculate_developer_weighted_points
-from config import CSV_STEAM, CSV_NON_STEAM
-from st_aggrid import AgGrid
+from src.calculation.process_data import clean_dev_genre_list, flagging, calculate_developer_weighted_points, load_data, calculate_follower_weighted_points, calculate_developer_weighted_points, handle_change
+from config import CSV_STEAM, CSV_NON_STEAM, INVENTORY_FILE
+# from st_aggrid import AgGrid
 
 # Page Config
 st.set_page_config(page_title="AGS - Game Ranking Tool", layout="wide")
@@ -52,7 +52,7 @@ if "dev_list" not in st.session_state:
 
 # Helper: load defaults into session state
 def load_defaults():
-    df_steam, df_nonsteam, dev_list, genre_list = load_data(CSV_STEAM, CSV_NON_STEAM)
+    df_steam, df_nonsteam, dev_list, genre_list, inventory = load_data(CSV_STEAM, CSV_NON_STEAM)
     df_steam = clean_dev_genre_list(df_steam)
     df_steam = flagging(df_steam)
     st.session_state.df_steam = df_steam
@@ -63,6 +63,7 @@ def load_defaults():
     st.session_state.nonsteam_cleaned = True
     st.session_state.dev_list = dev_list
     st.session_state.genre_list = genre_list
+    # st.session_state.game_data = inventory
     # Clear cached upload bytes
     st.session_state.uploaded_steam_bytes = None
     st.session_state.uploaded_steam_name = None
@@ -194,8 +195,6 @@ with tab_steam:
         follower_points.append(points)
         df_steam.loc[index, 'Follower Points'] = points
 
-
-
     # Developer Points Calculation Logic
     developer_points = []
     for index, row in df_steam.iterrows():
@@ -204,7 +203,6 @@ with tab_steam:
         developer_points.append(points)
         df_steam.loc[index, 'Developer Points'] = points
     
-
     # Final Score Calculation
     df_steam['Weighted Follower Score'] = df_steam['Follower Points'] * w_followers
     df_steam['Weighted Dev Score'] = df_steam['Developer Points'] * w_developers
@@ -315,104 +313,58 @@ with tab_inventory:
 
     # Initialize session state
     if "game_data" not in st.session_state:
-        st.session_state.game_data = pd.read_csv(r'C:\Users\Rasika\Desktop\AGS\repos\game_ranking\src\data\team_reviews_ game_inventory.csv')
-        st.session_state.new_row_index = None  # Track last added row
+        st.session_state.game_data = pd.read_csv(INVENTORY_FILE)
 
+    # Display instructions
     st.header("🎮 Game Tracker")
-
-    # Add new game section
-    with st.expander("➕ Add New Game", expanded=False):
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            new_game = st.text_input("Game Name", key="new_game_name")
-            new_date = st.text_input("Date Purchased", placeholder="DD/MM/YYYY or 'Free to Play'", key="new_game_date")
-            new_platform = st.selectbox("Platform", 
-                                       ['PC (Steam)', 'PC (Epic)', 'PC (GOG)', 'PlayStation', 'Xbox', 'Nintendo Switch', 'Mobile'],
-                                       key="new_game_platform")
-        
-        with col2:
-            new_physical = st.checkbox("Physical", key="new_game_physical")
-            new_digital = st.checkbox("Digital", value=True, key="new_game_digital")
-            new_account = st.text_input("Account", value="reviewteamthegamessphere", key="new_game_account")
-        
-        with col3:
-            new_inactive = st.checkbox("Inactive", key="new_game_inactive")
-            new_on_hold = st.checkbox("On Hold", key="new_game_on_hold")
-            new_active = st.checkbox("Active", key="new_game_active")
-            new_reviewed = st.checkbox("Reviewed", key="new_game_reviewed")
-        
-        new_link = st.text_input("Review Link (optional)", key="new_game_link")
-        
-        if st.button("Add Game", type="primary", key="add_game_btn"):
-            if new_game:
-                new_row = pd.DataFrame({
-                    'Game': [new_game],
-                    'Date Purchased': [new_date],
-                    'Physical': [new_physical],
-                    'Digital': [new_digital],
-                    'Platform': [new_platform],
-                    'Account': [new_account],
-                    'Inactive': [new_inactive],
-                    'On Hold': [new_on_hold],
-                    'Active': [new_active],
-                    'Reviewed': [new_reviewed],
-                    'Links': [new_link]
-                })
-                st.session_state.game_data = pd.concat([st.session_state.game_data, new_row], ignore_index=True)
-                st.success(f"✅ Added '{new_game}' to the tracker!")
-                st.rerun()
-            else:
-                st.error("Please enter a game name")
-
-    # Display and edit the data table
     st.subheader("Game Library")
+    st.info("💡 Edit the table directly, toggle checkboxes, or use the + button to add rows. Changes save automatically!")
 
-    # Use data editor for interactive editing
-    edited_df = st.data_editor(
-        st.session_state.game_data,
-        use_container_width=True,
-        num_rows="dynamic",  # Allows adding/deleting rows
-        column_config={
-            "Game": st.column_config.TextColumn("Game", width="medium", required=True),
-            "Date Purchased": st.column_config.TextColumn("Date Purchased", width="small"),
-            "Physical": st.column_config.CheckboxColumn("Physical", width="small"),
-            "Digital": st.column_config.CheckboxColumn("Digital", width="small"),
-            "Platform": st.column_config.TextColumn("Platform", width="medium"),
-            "Account": st.column_config.TextColumn("Account", width="medium"),
-            "Inactive": st.column_config.CheckboxColumn("Inactive", width="small"),
-            "On Hold": st.column_config.CheckboxColumn("On Hold", width="small"),
-            "Active": st.column_config.CheckboxColumn("Active", width="small"),
-            "Reviewed": st.column_config.CheckboxColumn("Reviewed", width="small"),
-            "Links": st.column_config.LinkColumn("Links", width="large", display_text="Open Link")
-        },
-        hide_index=True,
-        key="game_editor"
-    )
-
-    # Update session state with edited data
-    if not edited_df.equals(st.session_state.game_data):
-        st.session_state.game_data = edited_df
-
-    # Statistics
+    # Data Insights
     st.divider()
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        st.metric("Total Games", len(st.session_state.game_data))
+        st.metric("Total Games", len(st.session_state.game_data), border=True)
 
     with col2:
-        active_count = st.session_state.game_data['Active'].sum()
-        st.metric("Active", active_count)
+        active_count = int(st.session_state.game_data['Active'].sum())
+        st.metric("Active", active_count, border=True)
 
     with col3:
-        on_hold_count = st.session_state.game_data['On Hold'].sum()
-        st.metric("On Hold", on_hold_count)
+        on_hold_count = int(st.session_state.game_data['On Hold'].sum())
+        st.metric("On Hold", on_hold_count, border=True)
 
     with col4:
-        reviewed_count = st.session_state.game_data['Reviewed'].sum()
-        st.metric("Reviewed", reviewed_count)
+        reviewed_count = int(st.session_state.game_data['Reviewed'].sum())
+        st.metric("Reviewed", reviewed_count, border=True)
 
     with col5:
-        inactive_count = st.session_state.game_data['Inactive'].sum()
-        st.metric("Inactive", inactive_count)
+        inactive_count = int(st.session_state.game_data['Inactive'].sum())
+        st.metric("Inactive", inactive_count, border=True)
+
+    st.divider()
+    
+    #create editable table with data_editor as key
+    st.data_editor(
+        st.session_state.game_data,
+        num_rows="dynamic",
+        key="game_editor",
+        column_config={
+            "Game Name": st.column_config.TextColumn("Game", width="medium", required=True),
+            "Date Purchased": st.column_config.TextColumn("Date Purchased"),
+            "Physical": st.column_config.CheckboxColumn("Physical"),
+            "Digital": st.column_config.CheckboxColumn("Digital"),
+            "Platform": st.column_config.TextColumn("Platform"),
+            "Account": st.column_config.TextColumn("Account"),
+            "Inactive": st.column_config.CheckboxColumn("Inactive"),
+            "On Hold": st.column_config.CheckboxColumn("On Hold"),
+            "Active": st.column_config.CheckboxColumn("Active"),
+            "Reviewed": st.column_config.CheckboxColumn("Reviewed"),
+            "Links": st.column_config.LinkColumn("Links", display_text="Open Link")
+        },
+        disabled=["Game Name"],  # Disable editing for Game Name to preserve data integrity
+        on_change=handle_change,
+    )
+
+    
