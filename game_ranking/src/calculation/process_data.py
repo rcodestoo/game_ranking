@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import math
 from config import CSV_STEAM, CSV_NON_STEAM, DEV_LIST, GENRE_LIST, INVENTORY_FILE
-
+from src.calculation.scraper import scrape_google_trends
 
 #LOAD DEVELOPER AND GENRE LIST
 developer_list = pd.read_excel(DEV_LIST)
@@ -113,6 +113,7 @@ def calculate_developer_weighted_points(developers, developer_list=developer_lis
     avg_weighted_point = sum(dev_points) / len(dev_points) if dev_points else 1
     return avg_weighted_point, missing_devs
 
+
 # handle changes in inventory table
 def handle_change():
     changes = st.session_state["game_editor"]
@@ -135,10 +136,7 @@ def handle_change():
     if changes["deleted_rows"]:
         df = df.drop(index=changes["deleted_rows"]).reset_index(drop=True)
 
-    # perform the computation
-    # df["c"] = df["a"] + df["b"]
-
-    # only update if needed
+    # only update if changes have been made
     did_change = bool(changes["edited_rows"] or new_rows or changes["deleted_rows"])
     if did_change:
         st.session_state.df = df
@@ -147,3 +145,33 @@ def handle_change():
             df.to_csv(INVENTORY_FILE, index=True)
     except Exception as e:
             st.error(f"Failed to save changes to CSV: {e}")
+
+
+def calculate_google_trends_points(game_name):
+    try:
+        trends_data = scrape_google_trends([game_name], timeframe='today 12-m')
+        if not trends_data.empty and game_name in trends_data.columns:
+            latest_interest = trends_data[game_name].iloc[-1]
+            return latest_interest
+        else:
+            return 0
+    except Exception as e:
+        st.error(f"Error fetching Google Trends data for {game_name}: {e}")
+        return e
+    
+
+def genre_trend(genre_list):
+    total_points = 0
+    for index, row in genre_list.iterrows():
+        genre = row['Genre'].strip()
+        try:
+            print(f"Fetching Google Trends data for genre: {genre}")
+            trends_data = scrape_google_trends(genre)
+            # if not trends_data.empty and genre in trends_data.columns:
+            #     latest_interest = trends_data[genre].iloc[-1]
+            #     total_points += latest_isnterest
+            st.write(trends_data)
+        except Exception as e:
+            st.error(f"Error fetching Google Trends data for genre {genre}: {e}")
+    return trends_data
+

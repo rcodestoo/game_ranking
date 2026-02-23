@@ -9,7 +9,7 @@ DATA_DIR = BASE_DIR / 'src' / 'data'
 
 # Define files
 CSV_STEAM = RAW_DIR / 'raw_steam.csv'
-CSV_NON_STEAM = RAW_DIR / 'raw_non_steam.csv'
+CSV_NON_STEAM = RAW_DIR / 'Categorized_Game_List_2026-01-15_to_2026-03-01.csv' #'raw_non_steam.csv'
 DEV_LIST = DATA_DIR / 'developer_list.xlsx'
 GENRE_LIST = DATA_DIR / 'genre_list.xlsx'
 INVENTORY_FILE = DATA_DIR / 'team_reviews_game_inventory.csv'

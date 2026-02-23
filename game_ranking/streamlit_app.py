@@ -4,6 +4,7 @@ import numpy as np
 import io
 import datetime as dt
 from src.calculation.process_data import clean_dev_genre_list, flagging, calculate_developer_weighted_points, load_data, calculate_follower_weighted_points, calculate_developer_weighted_points, handle_change
+from src.calculation.scraper import scrape_google_trends
 from config import CSV_STEAM, CSV_NON_STEAM, INVENTORY_FILE
 # from st_aggrid import AgGrid
 
@@ -157,7 +158,7 @@ steam_source_name = st.session_state.get("steam_source", "default file")
 nonsteam_source_name = st.session_state.get("nonsteam_source", "default file")
 
 # SET UP DIFFERENT TABS FOR STEAM AND NON-STEAM REPORTS
-tab_steam , tab_nonsteam, tab_inventory = st.tabs(["🚀 Steam Report", "📽️ Non-Steam Report", "🎮 Game Inventory"])
+tab_steam , tab_nonsteam, tab_inventory, tab_genre = st.tabs(["🚀 Steam Report", "📽️ Non-Steam Report", "🎮 Game Inventory", "📈 Genre Trends"])
 
 # TAB 1: STEAM REPORT
 with tab_steam:
@@ -309,8 +310,6 @@ with tab_nonsteam:
 
 # TAB 3: GAME INVENTORY
 with tab_inventory:
-    st.title("📋 Interactive Sheet with Add Row Button")
-
     # Initialize session state
     if "game_data" not in st.session_state:
         st.session_state.game_data = pd.read_csv(INVENTORY_FILE)
@@ -367,4 +366,14 @@ with tab_inventory:
         on_change=handle_change,
     )
 
-    
+from src.calculation.scraper import google_trends
+with tab_genre:
+    st.header("Google Trends Analysis")
+    st.info("This section will display Google Trends data for Genre's over the past 12 months.")
+
+    try:
+        trends_data = google_trends()
+        st.subheader("Interest Over Time")
+        st.dataframe(trends_data, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error fetching Google Trends data: {e}")
