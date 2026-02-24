@@ -366,8 +366,8 @@ with tab_inventory:
         on_change=handle_change,
     )
 
-from src.calculation.scraper import google_trends
 with tab_genre:
+    from src.calculation.scraper import google_trends
     st.header("Google Trends Analysis")
     st.info("This section will display Google Trends data for Genre's over the past 12 months.")
 
