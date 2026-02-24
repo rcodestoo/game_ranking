@@ -3,8 +3,9 @@ import logging
 import pandas as pd
 from pytrends.request import TrendReq
 from pytrends.exceptions import TooManyRequestsError
+from config import GENRE_LIST
 
-GENRES = pd.read_excel("src/data/genre_list.xlsx")["Genre"].tolist()
+GENRES = pd.read_excel(GENRE_LIST)["Genre"].tolist()
     
 
 def scrape_google_trends(keywords, timeframe='today 12-m'):
