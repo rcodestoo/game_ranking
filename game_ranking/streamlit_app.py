@@ -158,7 +158,7 @@ steam_source_name = st.session_state.get("steam_source", "default file")
 nonsteam_source_name = st.session_state.get("nonsteam_source", "default file")
 
 # SET UP DIFFERENT TABS FOR STEAM AND NON-STEAM REPORTS
-tab_steam , tab_nonsteam, tab_inventory, tab_genre = st.tabs(["🚀 Steam Report", "📽️ Non-Steam Report", "🎮 Game Inventory", "📈 Genre Trends"])
+tab_steam , tab_nonsteam, tab_inventory = st.tabs(["🚀 Steam Report", "📽️ Non-Steam Report", "🎮 Game Inventory"]) #, tab_genre , , "📈 Genre Trends"
 
 # TAB 1: STEAM REPORT
 with tab_steam:
@@ -322,6 +322,13 @@ with tab_inventory:
     # Data Insights
     st.divider()
     col1, col2, col3, col4, col5 = st.columns(5)
+    try:
+        st.session_state.game_data['Active'] = st.session_state.game_data['Active'].astype(bool)
+        st.session_state.game_data['On Hold'] = st.session_state.game_data['On Hold'].astype(bool)
+        st.session_state.game_data['Reviewed'] = st.session_state.game_data['Reviewed'].astype(bool)
+        st.session_state.game_data['Inactive'] = st.session_state.game_data['Inactive'].astype(bool)
+    except Exception as e:
+        st.error(f"Error processing game data: {e}")
 
     with col1:
         st.metric("Total Games", len(st.session_state.game_data), border=True)
@@ -366,14 +373,15 @@ with tab_inventory:
         on_change=handle_change,
     )
 
-with tab_genre:
-    from src.calculation.scraper import google_trends
-    st.header("Google Trends Analysis")
-    st.info("This section will display Google Trends data for Genre's over the past 12 months.")
+# with tab_genre:
+#     st.info("This section is a WIP")
+#     from src.calculation.scraper import google_trends
+#     st.header("Google Trends Analysis")
+#     st.info("This section will display Google Trends data for Genre's over the past 12 months.")
 
-    try:
-        trends_data = google_trends()
-        st.subheader("Interest Over Time")
-        st.dataframe(trends_data, use_container_width=True)
-    except Exception as e:
-        st.error(f"Error fetching Google Trends data: {e}")
+#     try:
+#         trends_data = google_trends()
+#         st.subheader("Interest Over Time")
+#         st.dataframe(trends_data, use_container_width=True)
+#     except Exception as e:
+#         st.error(f"Error fetching Google Trends data: {e}")
