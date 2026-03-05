@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import math
+import requests
 from config import CSV_STEAM, CSV_NON_STEAM, DEV_LIST, GENRE_LIST, INVENTORY_FILE
 from src.calculation.scraper import scrape_google_trends
 
@@ -8,6 +9,7 @@ from src.calculation.scraper import scrape_google_trends
 developer_list = pd.read_excel(DEV_LIST)
 genre_list = pd.read_excel(GENRE_LIST)
 inventory = pd.read_csv(INVENTORY_FILE)
+steam_list = pd.read_csv(CSV_STEAM)
 
 #FUNCTION TO LOAD DATA
 @st.cache_data
@@ -46,7 +48,7 @@ def clean_dev_genre_list(df):
 #CREATING FLAGS TO IDENTIFY DATA WITH CERTAIN CRITERIA 
 def flagging(df):
     #selecting columns for calculation
-    df_calculation = df[["Name", "ReleaseDate", "Developers", "Genres", "FollowerCount"]]
+    df_calculation = df[["Name", "ReleaseDate", "Developers", "Genres", "FollowerCount"]].copy()
 
     #Flagging for indie genre
     for index, row in df_calculation.iterrows():
@@ -175,3 +177,29 @@ def genre_trend(genre_list):
             st.error(f"Error fetching Google Trends data for genre {genre}: {e}")
     return trends_data
 
+
+def player_counts():
+    base_api_call = "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
+    game_names = []
+    game_id = []
+    for index, row in inventory.iterrows():
+        game_name = row['Game Name']
+        game_names.append(game_name)
+    for index, row in steam_list.iterrows():
+        steam_game_name = row['Game Name']
+        if game_name.strip().lower() == steam_game_name.strip().lower():
+            appid = row['AppID']
+            game_id.append(appid)
+
+            # api_url = f"{base_api_call}?appid={appid}"
+            # try:
+            #     response = requests.get(api_url)
+            #     if response.status_code == 200:
+            #         data = response.json()
+            #         player_count = data.get('response', {}).get('player_count', 0)
+            #         print(f"Current players for {game_name}: {player_count}")
+            #         inventory.at[index, 'Current Players'] = player_count
+            #     else:
+            #         print(f"Failed to fetch player count for {game_name}. Status code: {response.status_code}")
+            # except Exception as e:
+            #     print(f"Error fetching player count for {game_name}: {e}")
