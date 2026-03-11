@@ -1,0 +1,12 @@
+{
+  "steam": {
+    "last_run_date": null,
+    "window_start": null,
+    "window_end": null
+  },
+  "non_steam": {
+    "last_run_date": null,
+    "window_start": null,
+    "window_end": null
+  }
+}

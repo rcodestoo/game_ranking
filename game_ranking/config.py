@@ -9,7 +9,19 @@ DATA_DIR = BASE_DIR / 'src' / 'data'
 
 # Define files
 CSV_STEAM = RAW_DIR / 'raw_steam.csv'
-CSV_NON_STEAM = RAW_DIR / 'Categorized_Game_List_2026-01-15_to_2026-03-01.csv' #'raw_non_steam.csv'
+CSV_NON_STEAM = RAW_DIR / 'raw_non_steam_2026-03-09.csv' #'raw_non_steam.csv'
 DEV_LIST = DATA_DIR / 'developer_list.xlsx'
 GENRE_LIST = DATA_DIR / 'genre_list.xlsx'
 INVENTORY_FILE = DATA_DIR / 'team_reviews_game_inventory.csv'
+
+
+def get_latest_steam_csv() -> "Path":
+    """Return the most recently dated raw_steam_YYYY-MM-DD.csv, falling back to CSV_STEAM."""
+    candidates = sorted(RAW_DIR.glob("raw_steam_????-??-??.csv"))
+    return candidates[-1] if candidates else CSV_STEAM
+
+
+def get_latest_nonsteam_csv() -> "Path":
+    """Return the most recently dated raw_non_steam_YYYY-MM-DD.csv, falling back to CSV_NON_STEAM."""
+    candidates = sorted(RAW_DIR.glob("raw_non_steam_????-??-??.csv"))
+    return candidates[-1] if candidates else CSV_NON_STEAM
