@@ -48,7 +48,8 @@ def clean_dev_genre_list(df):
 #CREATING FLAGS TO IDENTIFY DATA WITH CERTAIN CRITERIA 
 def flagging(df):
     #selecting columns for calculation
-    df_calculation = df[["Name", "ReleaseDate", "Developers", "Genres", "FollowerCount"]].copy()
+    extra_cols = [c for c in ["date_appended"] if c in df.columns]
+    df_calculation = df[["Name", "ReleaseDate", "Developers", "Genres", "FollowerCount"] + extra_cols].copy()
 
     #Flagging for indie genre
     for index, row in df_calculation.iterrows():

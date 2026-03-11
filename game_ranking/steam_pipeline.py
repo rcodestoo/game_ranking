@@ -194,3 +194,56 @@ def _append_to_raw_steam(start_date: str, end_date: str, log) -> int:
         new_df.to_csv(out_path, index=False)
         log(f"📝 Created {out_path.name} with {len(new_df)} rows")
         return len(new_df)
+
+
+def append_from_uploaded_steam_csv(uploaded_df: pd.DataFrame) -> tuple:
+    """
+    Merge an externally uploaded steam DataFrame into the persistent CSV.
+    - Rows whose AppId already exists are OVERWRITTEN.
+    - New rows are APPENDED.
+    - ALL uploaded rows get date_appended = today.
+    Returns (n_updated, n_new).
+    """
+    today = date.today().isoformat()
+
+    uploaded_df = uploaded_df.copy()
+
+    # Normalise AppId column name (handle case variance)
+    for col in list(uploaded_df.columns):
+        if col.lower() == "appid" and col != "AppId":
+            uploaded_df = uploaded_df.rename(columns={col: "AppId"})
+
+    uploaded_df["date_appended"] = today
+    upload_ids = set(uploaded_df["AppId"].astype(str))
+
+    source_path = get_latest_steam_csv()
+    out_path = RAW_DIR / f"raw_steam_{date.today()}.csv"
+
+    if source_path.exists():
+        existing_df = pd.read_csv(source_path)
+        existing_ids = set(existing_df["AppId"].astype(str))
+        n_updated = len(upload_ids & existing_ids)
+        n_new = len(upload_ids - existing_ids)
+
+        kept = existing_df[~existing_df["AppId"].astype(str).isin(upload_ids)].copy()
+
+        # Align columns so concat doesn't introduce NaN-filled mismatches
+        all_cols = existing_df.columns.tolist()
+        if "date_appended" not in all_cols:
+            all_cols.append("date_appended")
+        for col in all_cols:
+            if col not in uploaded_df.columns:
+                uploaded_df[col] = None
+            if col not in kept.columns:
+                kept[col] = None
+        uploaded_df = uploaded_df[all_cols]
+        kept = kept[all_cols]
+
+        combined = pd.concat([kept, uploaded_df], ignore_index=True)
+    else:
+        n_updated, n_new = 0, len(uploaded_df)
+        combined = uploaded_df
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(out_path, index=False)
+    return n_updated, n_new

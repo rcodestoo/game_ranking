@@ -408,3 +408,51 @@ def _append_to_raw_nonsteam(log) -> int:
         new_df.to_csv(out_path, index=False)
         log(f"Created {out_path.name} with {len(new_df)} rows")
         return len(new_df)
+
+
+def append_from_uploaded_nonsteam_csv(uploaded_df: pd.DataFrame) -> tuple:
+    """
+    Merge an externally uploaded non-steam DataFrame into the persistent CSV.
+    - Rows whose Game Title already exists are OVERWRITTEN.
+    - New rows are APPENDED.
+    - ALL uploaded rows get date_appended = today.
+    Returns (n_updated, n_new).
+    """
+    today = date.today().isoformat()
+
+    uploaded_df = uploaded_df.copy()
+    uploaded_df = _normalize_nonsteam_df(uploaded_df)
+    uploaded_df["Release Date"] = _normalize_release_date(uploaded_df["Release Date"])
+
+    no_video = (
+        uploaded_df["YouTube URL"].isna() |
+        (uploaded_df["YouTube URL"].astype(str).str.strip() == "")
+    )
+    uploaded_df.loc[no_video, "YouTube URL"] = "No YouTube video found"
+
+    uploaded_df["date_appended"] = today
+
+    upload_names = set(uploaded_df["Game Title"].astype(str).str.strip().str.lower())
+
+    source_path = get_latest_nonsteam_csv()
+    out_path = RAW_DIR / f"raw_non_steam_{date.today()}.csv"
+
+    if source_path.exists():
+        existing_df = pd.read_csv(source_path)
+        existing_df = _normalize_nonsteam_df(existing_df)
+
+        existing_names = set(existing_df["Game Title"].astype(str).str.strip().str.lower())
+        n_updated = len(upload_names & existing_names)
+        n_new = len(upload_names - existing_names)
+
+        kept = existing_df[
+            ~existing_df["Game Title"].astype(str).str.strip().str.lower().isin(upload_names)
+        ]
+        combined = pd.concat([kept, uploaded_df], ignore_index=True)
+    else:
+        n_updated, n_new = 0, len(uploaded_df)
+        combined = uploaded_df
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(out_path, index=False)
+    return n_updated, n_new

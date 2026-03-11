@@ -14,8 +14,8 @@ from src.calculation.process_data import clean_dev_genre_list, flagging, calcula
 from src.calculation.scraper import scrape_google_trends
 from config import INVENTORY_FILE, get_latest_steam_csv, get_latest_nonsteam_csv
 from pipeline.state import get_last_run_info, get_next_window
-from steam_pipeline import run_steam_scraper
-from nonsteam_pipeline import run_nonsteam_scraper
+from steam_pipeline import run_steam_scraper, append_from_uploaded_steam_csv
+from nonsteam_pipeline import run_nonsteam_scraper, append_from_uploaded_nonsteam_csv
 
 # Page Config
 st.set_page_config(page_title="AGS - Game Ranking Tool", layout="wide")
@@ -170,12 +170,9 @@ if st.session_state.uploaded_steam_bytes:
             if steam_missing:
                 st.sidebar.error(f"Missing columns: {', '.join(steam_missing)}")
             else:
-                steam_df_upload = clean_dev_genre_list(steam_df_upload)
-                steam_df_upload = flagging(steam_df_upload)
-                st.session_state.df_steam = steam_df_upload
-                st.session_state.steam_source = st.session_state.uploaded_steam_name
-                st.session_state.steam_cleaned = True
-                st.sidebar.success(f"✅ Loaded {st.session_state.uploaded_steam_name}")
+                n_updated, n_new = append_from_uploaded_steam_csv(steam_df_upload)
+                reload_steam_from_csv()
+                st.sidebar.success(f"✅ Saved: {n_new} new, {n_updated} updated")
         except Exception as e:
             st.sidebar.error(f"Error loading file: {e}")
 else:
@@ -196,10 +193,9 @@ if st.session_state.uploaded_nonsteam_bytes:
             if nonsteam_missing:
                 st.sidebar.error(f"Missing columns: {', '.join(nonsteam_missing)}")
             else:
-                st.session_state.df_nonsteam = nonsteam_df_upload
-                st.session_state.nonsteam_source = st.session_state.uploaded_nonsteam_name
-                st.session_state.nonsteam_cleaned = True
-                st.sidebar.success(f"✅ Loaded {st.session_state.uploaded_nonsteam_name}")
+                n_updated, n_new = append_from_uploaded_nonsteam_csv(nonsteam_df_upload)
+                reload_nonsteam_from_csv()
+                st.sidebar.success(f"✅ Saved: {n_new} new, {n_updated} updated")
         except Exception as e:
             st.sidebar.error(f"Error loading file: {e}")
 else:
