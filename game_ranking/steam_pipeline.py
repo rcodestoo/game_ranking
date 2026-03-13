@@ -136,6 +136,16 @@ def run_steam_scraper(start_date=None, end_date=None, status_callback=None) -> d
                 "window_end": end_date, "error": str(e)}
 
 
+def _normalize_release_dates(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize the ReleaseDate column to dd-mm-yyyy format."""
+    if "ReleaseDate" not in df.columns:
+        return df
+    parsed = pd.to_datetime(df["ReleaseDate"], errors="coerce", dayfirst=True)
+    mask = parsed.notna()
+    df.loc[mask, "ReleaseDate"] = parsed[mask].dt.strftime("%d-%m-%Y")
+    return df
+
+
 def _append_to_raw_steam(start_date: str, end_date: str, log) -> int:
     """
     Read the temp export CSV and append only new rows (by AppId) to a timestamped
@@ -150,6 +160,8 @@ def _append_to_raw_steam(start_date: str, end_date: str, log) -> int:
     if new_df.empty:
         log("⚠️ Temp export was empty — no new games in this date window")
         return 0
+
+    new_df = _normalize_release_dates(new_df)
 
     # Rename AppId column if needed (C# exports as 'AppId', existing CSV uses 'AppId')
     if "AppId" not in new_df.columns and "appid" in new_df.columns.str.lower().tolist():
@@ -213,6 +225,7 @@ def append_from_uploaded_steam_csv(uploaded_df: pd.DataFrame) -> tuple:
         if col.lower() == "appid" and col != "AppId":
             uploaded_df = uploaded_df.rename(columns={col: "AppId"})
 
+    uploaded_df = _normalize_release_dates(uploaded_df)
     uploaded_df["date_appended"] = today
     upload_ids = set(uploaded_df["AppId"].astype(str))
 

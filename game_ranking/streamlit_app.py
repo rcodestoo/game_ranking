@@ -15,7 +15,7 @@ from src.calculation.scraper import scrape_google_trends
 from config import INVENTORY_FILE, get_latest_steam_csv, get_latest_nonsteam_csv
 from pipeline.state import get_last_run_info, get_next_window
 from steam_pipeline import run_steam_scraper, append_from_uploaded_steam_csv
-from nonsteam_pipeline import run_nonsteam_scraper, append_from_uploaded_nonsteam_csv
+from nonsteam_pipeline import run_nonsteam_scraper, append_from_uploaded_nonsteam_csv, verify_single_game_steam_status
 
 # Page Config
 st.set_page_config(page_title="AGS - Game Ranking Tool", layout="wide")
@@ -223,6 +223,57 @@ genre_list = st.session_state.genre_list
 steam_source_name = st.session_state.get("steam_source", "default file")
 nonsteam_source_name = st.session_state.get("nonsteam_source", "default file")
 
+# ── Global date range (shared across all tabs) ────────────────────────────────
+def _min_date_from_series(series: pd.Series) -> dt.date:
+    parsed = pd.to_datetime(series, errors='coerce').dropna()
+    return parsed.min().date() if len(parsed) else dt.date(2000, 1, 1)
+
+def _max_date_from_series(series: pd.Series) -> dt.date:
+    parsed = pd.to_datetime(series, errors='coerce').dropna()
+    return parsed.max().date() if len(parsed) else dt.date.today()
+
+_steam_min = _min_date_from_series(df_steam.get('ReleaseDate',   pd.Series(dtype=str)))
+_steam_max = _max_date_from_series(df_steam.get('ReleaseDate',   pd.Series(dtype=str)))
+_ns_min    = _min_date_from_series(df_nonsteam.get('YouTube ReleaseDate', pd.Series(dtype=str)))
+_ns_max    = _max_date_from_series(df_nonsteam.get('YouTube ReleaseDate', pd.Series(dtype=str)))
+_inv_min   = _min_date_from_series(
+    st.session_state.game_data.get('Date Purchased', pd.Series(dtype=str))
+    if 'game_data' in st.session_state else pd.Series(dtype=str)
+)
+_inv_max   = _max_date_from_series(
+    st.session_state.game_data.get('Date Purchased', pd.Series(dtype=str))
+    if 'game_data' in st.session_state else pd.Series(dtype=str)
+)
+GLOBAL_DATE_MIN = min(_steam_min, _ns_min, _inv_min)
+GLOBAL_DATE_MAX = max(_steam_max, _ns_max, _inv_max)
+
+# Clamp any stale session-state date values so they stay within the computed range
+for _key in ("steam_start_date", "ns_start_date", "inv_start_date"):
+    if _key in st.session_state and isinstance(st.session_state[_key], dt.date):
+        st.session_state[_key] = max(st.session_state[_key], GLOBAL_DATE_MIN)
+for _key in ("steam_end_date", "ns_end_date", "inv_end_date"):
+    if _key in st.session_state and isinstance(st.session_state[_key], dt.date):
+        st.session_state[_key] = min(st.session_state[_key], GLOBAL_DATE_MAX)
+
+# ── Date sync callbacks (keep all tabs in lockstep) ───────────────────────────
+def _sync_from_steam_dates():
+    st.session_state.ns_start_date  = st.session_state.steam_start_date
+    st.session_state.ns_end_date    = st.session_state.steam_end_date
+    st.session_state.inv_start_date = st.session_state.steam_start_date
+    st.session_state.inv_end_date   = st.session_state.steam_end_date
+
+def _sync_from_ns_dates():
+    st.session_state.steam_start_date = st.session_state.ns_start_date
+    st.session_state.steam_end_date   = st.session_state.ns_end_date
+    st.session_state.inv_start_date   = st.session_state.ns_start_date
+    st.session_state.inv_end_date     = st.session_state.ns_end_date
+
+def _sync_from_inv_dates():
+    st.session_state.steam_start_date = st.session_state.inv_start_date
+    st.session_state.steam_end_date   = st.session_state.inv_end_date
+    st.session_state.ns_start_date    = st.session_state.inv_start_date
+    st.session_state.ns_end_date      = st.session_state.inv_end_date
+
 # ── TABS ───────────────────────────────────────────────────────────────────────
 tab_steam, tab_nonsteam, tab_inventory = st.tabs(
     ["🚀 Steam Report", "📽️ Non-Steam Report", "🎮 Game Inventory"]
@@ -326,10 +377,12 @@ with tab_steam:
         points, _ = calculate_developer_weighted_points(row['Developers'])
         df_steam.loc[index, 'Developer Points'] = points
 
+    df_steam['Follower Points']         = df_steam['Follower Points'].round(2)
+    df_steam['Developer Points']        = df_steam['Developer Points'].round(2)
     df_steam['Weighted Follower Score'] = df_steam['Follower Points'] * w_followers
     df_steam['Weighted Dev Score']      = df_steam['Developer Points'] * w_developers
-    df_steam['Final Priority Score']    = df_steam['Weighted Follower Score'] + df_steam['Weighted Dev Score']
-
+    df_steam['Final Priority Score']    = (df_steam['Weighted Follower Score'] + df_steam['Weighted Dev Score']).round(2)
+    
     df_ranked = df_steam.sort_values('Final Priority Score', ascending=False, ignore_index=True)
 
     # Initialize reset flag for Steam filters
@@ -345,18 +398,18 @@ with tab_steam:
             st.markdown("**Release Date**")
             if 'ReleaseDate' in df_ranked.columns:
                 df_ranked['ReleaseDate'] = pd.to_datetime(df_ranked['ReleaseDate'], errors='coerce')
-                valid_dates = df_ranked['ReleaseDate'].dropna()
-                min_date = valid_dates.min().date() if len(valid_dates) else dt.date(2000, 1, 1)
-                max_date = valid_dates.max().date() if len(valid_dates) else dt.date.today()
-            else:
-                min_date, max_date = dt.date(2000, 1, 1), dt.date.today()
-            
+
             # Use default values if reset flag is set
-            default_start = min_date if st.session_state.steam_reset_filters else st.session_state.get("steam_start_date", min_date)
-            default_end = max_date if st.session_state.steam_reset_filters else st.session_state.get("steam_end_date", max_date)
-            
-            start_date = st.date_input("From", value=default_start, key="steam_start_date", format="DD/MM/YYYY")
-            end_date   = st.date_input("To",   value=default_end, key="steam_end_date", format="DD/MM/YYYY")
+            if st.session_state.steam_reset_filters:
+                st.session_state.steam_start_date = GLOBAL_DATE_MIN
+                st.session_state.steam_end_date   = GLOBAL_DATE_MAX
+                st.session_state.ns_start_date    = GLOBAL_DATE_MIN
+                st.session_state.ns_end_date      = GLOBAL_DATE_MAX
+                st.session_state.inv_start_date   = GLOBAL_DATE_MIN
+                st.session_state.inv_end_date     = GLOBAL_DATE_MAX
+
+            start_date = st.date_input("From", value=st.session_state.get("steam_start_date", GLOBAL_DATE_MIN), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="steam_start_date", format="DD/MM/YYYY", on_change=_sync_from_steam_dates)
+            end_date   = st.date_input("To",   value=st.session_state.get("steam_end_date",   GLOBAL_DATE_MAX), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="steam_end_date",   format="DD/MM/YYYY", on_change=_sync_from_steam_dates)
 
         # --- Genre multi-select ---
         with f_col2:
@@ -483,11 +536,24 @@ with tab_steam:
         # Include date_appended for highlighting (filtered out of visible cols automatically by styler)
         display_cols = cols_to_show + (["date_appended"] if "date_appended" in df_filtered_steam.columns else [])
         df_display = df_filtered_steam[display_cols].copy()
-        df_display['ReleaseDate'] = pd.to_datetime(df_display['ReleaseDate'], errors='coerce').dt.strftime('%d/%m/%Y')
+        for col in ['Follower Points', 'Developer Points', 'Final Priority Score']:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].round(2)
+        _parsed_dates = pd.to_datetime(df_display['ReleaseDate'], errors='coerce', dayfirst=True)
+        df_display['ReleaseDate'] = _parsed_dates.dt.strftime('%d/%m/%Y').fillna('Date Not Parsable')
         df_display['Developers'] = df_display['Developers'].apply(
             lambda x: ', '.join(x) if isinstance(x, list) else str(x)
         )
-        st.dataframe(highlight_new_rows(df_display), use_container_width=True)
+        st.dataframe(
+            highlight_new_rows(df_display),
+            use_container_width=True,
+            column_config={
+                "Follower Points":      st.column_config.NumberColumn(format="%.2f"),
+                "Developer Points":     st.column_config.NumberColumn(format="%.2f"),
+                "Final Priority Score": st.column_config.NumberColumn(format="%.2f"),
+                "FollowerCount":        st.column_config.NumberColumn(format="%d"),
+            },
+        )
 
     with tab2:
         st.subheader("Developer Ranking List")
@@ -577,13 +643,37 @@ with tab_nonsteam:
                 st.error(f"❌ Scrape failed: {result['error']}")
                 _ns_thread_state["result"] = None
 
+    # ── Verify Steam Status (single game) ────────────────────────────────────
+    st.subheader("Verify Steam Status")
+    game_names = sorted(df_nonsteam["Game Title"].dropna().unique().tolist())
+    selected_game = st.selectbox("Select a game to verify", game_names, key="verify_game_select")
+
+    if st.button("🔍 Verify", key="ns_verify_single"):
+        row_mask = df_nonsteam["Game Title"] == selected_game
+        platforms = str(df_nonsteam.loc[row_mask, "Platforms"].iloc[0]) if row_mask.any() else ""
+        status = verify_single_game_steam_status(selected_game, platforms)
+        # Update the CSV on disk (write to temp file first, then replace)
+        source = get_latest_nonsteam_csv()
+        try:
+            df_disk = pd.read_csv(source)
+            df_disk.loc[df_disk["Game Title"] == selected_game, "SteamStatus"] = status
+            tmp = source.with_suffix(".tmp")
+            df_disk.to_csv(tmp, index=False)
+            tmp.replace(source)
+            reload_nonsteam_from_csv()
+            st.success(f"**{selected_game}** → {status}")
+            st.rerun()
+        except PermissionError:
+            st.error("Cannot write to CSV — the file may be open in another program. Close it and try again.")
+
     st.divider()
 
     # ── Sidebar config ────────────────────────────────────────────────────────
     st.sidebar.header("Non-Steam Report Configuration")
     st.info("The Non-Steam ranking is based on YouTube Views adjusted for the time since release. Games with higher adjusted views are prioritised.")
 
-    # Pre-processing: remove Steam games, parse dates
+    # Pre-processing: label unchecked games, remove Steam games, parse dates
+    df_nonsteam['SteamStatus'] = df_nonsteam['SteamStatus'].fillna('Needs Verification')
     df_nonsteam_filter = df_nonsteam[df_nonsteam['SteamStatus'] != 'PC Game (on Steam)'].copy()
     df_nonsteam_filter['YouTube ReleaseDate'] = pd.to_datetime(
         df_nonsteam_filter['YouTube ReleaseDate'], errors='coerce'
@@ -634,15 +724,16 @@ with tab_nonsteam:
         #--- YouTube Release Date ---
         with nf_col1:
             st.markdown("**YouTube Release Date**")
-            valid_yt = df_non_steam_ranked['YouTube ReleaseDate'].dropna()
-            ns_min = valid_yt.min().date() if len(valid_yt) else dt.date(2000, 1, 1)
-            ns_max = valid_yt.max().date() if len(valid_yt) else dt.date.today()
-            
-            default_ns_start = ns_min if st.session_state.ns_reset_filters else st.session_state.get("ns_start_date", ns_min)
-            default_ns_end = ns_max if st.session_state.ns_reset_filters else st.session_state.get("ns_end_date", ns_max)
-            
-            ns_start = st.date_input("From", value=default_ns_start, key="ns_start_date", format="DD/MM/YYYY")
-            ns_end   = st.date_input("To",   value=default_ns_end, key="ns_end_date", format="DD/MM/YYYY")
+            if st.session_state.ns_reset_filters:
+                st.session_state.steam_start_date = GLOBAL_DATE_MIN
+                st.session_state.steam_end_date   = GLOBAL_DATE_MAX
+                st.session_state.ns_start_date    = GLOBAL_DATE_MIN
+                st.session_state.ns_end_date      = GLOBAL_DATE_MAX
+                st.session_state.inv_start_date   = GLOBAL_DATE_MIN
+                st.session_state.inv_end_date     = GLOBAL_DATE_MAX
+
+            ns_start = st.date_input("From", value=st.session_state.get("ns_start_date", GLOBAL_DATE_MIN), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="ns_start_date", format="DD/MM/YYYY", on_change=_sync_from_ns_dates)
+            ns_end   = st.date_input("To",   value=st.session_state.get("ns_end_date",   GLOBAL_DATE_MAX), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="ns_end_date",   format="DD/MM/YYYY", on_change=_sync_from_ns_dates)
 
         # --- Platform multi-select ---
         with nf_col2:
@@ -797,15 +888,17 @@ with tab_inventory:
             st.markdown("**Date Purchased**")
             gd = st.session_state.game_data.copy()
             gd['Date Purchased'] = pd.to_datetime(gd['Date Purchased'], errors='coerce', format='%Y-%m-%d')
-            valid_inv = gd['Date Purchased'].dropna()
-            inv_min = valid_inv.min().date() if len(valid_inv) else dt.date(2000, 1, 1)
-            inv_max = valid_inv.max().date() if len(valid_inv) else dt.date.today()
-            
-            default_inv_start = inv_min if st.session_state.inv_reset_filters else st.session_state.get("inv_start_date", inv_min)
-            default_inv_end = inv_max if st.session_state.inv_reset_filters else st.session_state.get("inv_end_date", inv_max)
-            
-            inv_start = st.date_input("From", value=default_inv_start, key="inv_start_date", format="DD/MM/YYYY")
-            inv_end   = st.date_input("To",   value=default_inv_end, key="inv_end_date", format="DD/MM/YYYY")
+
+            if st.session_state.inv_reset_filters:
+                st.session_state.steam_start_date = GLOBAL_DATE_MIN
+                st.session_state.steam_end_date   = GLOBAL_DATE_MAX
+                st.session_state.ns_start_date    = GLOBAL_DATE_MIN
+                st.session_state.ns_end_date      = GLOBAL_DATE_MAX
+                st.session_state.inv_start_date   = GLOBAL_DATE_MIN
+                st.session_state.inv_end_date     = GLOBAL_DATE_MAX
+
+            inv_start = st.date_input("From", value=st.session_state.get("inv_start_date", GLOBAL_DATE_MIN), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="inv_start_date", format="DD/MM/YYYY", on_change=_sync_from_inv_dates)
+            inv_end   = st.date_input("To",   value=st.session_state.get("inv_end_date",   GLOBAL_DATE_MAX), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="inv_end_date",   format="DD/MM/YYYY", on_change=_sync_from_inv_dates)
 
         # --- Platform multi-select ---
         with inv_f2:

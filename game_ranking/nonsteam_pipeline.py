@@ -13,15 +13,18 @@ All file paths and tunable parameters are passed in from the Streamlit UI.
 The interactive input() call inside export_to_csv is monkey-patched away.
 """
 
+import ast
 import builtins
 import importlib.util
 import json
 import logging
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import requests
 
 from config import RAW_DIR, get_latest_nonsteam_csv
 from pipeline.state import get_next_window, mark_run_complete
@@ -317,6 +320,180 @@ _NONSTEAM_RENAME = {
 }
 
 
+_STEAM_API        = "https://store.steampowered.com/api/appdetails"
+_STEAM_SEARCH_API = "https://store.steampowered.com/api/storesearch/"
+_PC_PLATFORM_KEYWORDS = ("pc (microsoft windows)", "windows")
+
+
+def _extract_platforms_from_release_info(release_info_val) -> str:
+    """Parse ReleaseInfo dict string → comma-joined set of all platform names."""
+    try:
+        info = ast.literal_eval(str(release_info_val))
+        plats = list(info.get("original_platforms", []))
+        for port in info.get("ports", []):
+            plats.append(port.get("platform", ""))
+        return ", ".join(set(p for p in plats if p))
+    except Exception:
+        return ""
+
+
+def _detect_steam_status(app_id, platforms_str: str = "") -> str:
+    """
+    Check the Steam store API for app_id.
+    - Returns 'PC Game (on Steam)' if found on Steam store.
+    - Returns 'Non-Steam PC Game' if not on Steam but platforms include a PC platform.
+    - Returns 'Console / Other' otherwise.
+    """
+    try:
+        resp = requests.get(
+            _STEAM_API,
+            params={"appids": int(app_id), "filters": "basic"},
+            timeout=5,
+        )
+        if resp.json().get(str(int(app_id)), {}).get("success"):
+            return "PC Game (on Steam)"
+    except Exception:
+        pass
+    plats_lower = str(platforms_str).lower()
+    if any(kw in plats_lower for kw in _PC_PLATFORM_KEYWORDS):
+        return "Non-Steam PC Game"
+    return "Console / Other"
+
+
+def _search_steam_app_id(name: str):
+    """Search Steam store by name. Returns AppId if exact match found (case-insensitive), else None."""
+    try:
+        resp = requests.get(
+            _STEAM_SEARCH_API,
+            params={"term": name, "l": "english", "cc": "US"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("items", []):
+            if item.get("name", "").strip().lower() == name.strip().lower():
+                return item["id"]
+    except Exception:
+        pass
+    return None
+
+
+def _fill_steam_status(df: pd.DataFrame, log=None) -> pd.DataFrame:
+    """
+    For all rows with an AppId in the raw temp CSV (before normalization drops AppId),
+    check the Steam store API and set SteamStatus. Re-checks every row.
+    Uses ReleaseInfo to distinguish 'Non-Steam PC Game' vs 'Console / Other'.
+    """
+    if "AppId" not in df.columns:
+        return df
+
+    if "SteamStatus" not in df.columns:
+        df["SteamStatus"] = None
+
+    rows_to_check = df[df["AppId"].notna()]
+    if rows_to_check.empty:
+        return df
+
+    if log:
+        log(f"Detecting SteamStatus for {len(rows_to_check)} games via Steam store API...")
+
+    for idx, row in rows_to_check.iterrows():
+        platforms_str = _extract_platforms_from_release_info(row.get("ReleaseInfo", ""))
+        try:
+            status = _detect_steam_status(row["AppId"], platforms_str)
+        except Exception:
+            status = "Console / Other"
+        time.sleep(0.5)
+
+        # Fallback: if not found by AppId, try name-based search
+        if status != "PC Game (on Steam)":
+            name = str(row.get("Name", "")).strip()
+            try:
+                store_id = _search_steam_app_id(name)
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code == 429:
+                    if log:
+                        log("Rate limited by Steam. Waiting 10s...")
+                    time.sleep(10)
+                    store_id = _search_steam_app_id(name)
+                else:
+                    store_id = None
+            if store_id is not None:
+                status = _detect_steam_status(store_id, platforms_str)
+            time.sleep(0.5)
+
+        df.at[idx, "SteamStatus"] = status
+
+    return df
+
+
+def verify_single_game_steam_status(game_title: str, platforms_str: str = "") -> str:
+    """Check a single game by name against the Steam store. Returns status string."""
+    app_id = _search_steam_app_id(game_title)
+    if app_id is not None:
+        return _detect_steam_status(app_id, platforms_str)
+    plats_lower = platforms_str.lower()
+    if any(kw in plats_lower for kw in _PC_PLATFORM_KEYWORDS):
+        return "Non-Steam PC Game"
+    return "Console / Other"
+
+
+def backfill_steam_status(log=None) -> int:
+    """
+    Re-check every game in the latest non-steam CSV against the Steam store.
+    Uses name-based exact search to find AppId, then appdetails to confirm.
+    Uses the Platforms column to distinguish 'Non-Steam PC Game' vs 'Console / Other'.
+    Writes results back to the same CSV file. Returns number of rows processed.
+    """
+    source_path = get_latest_nonsteam_csv()
+    if not source_path.exists():
+        if log:
+            log("No non-steam CSV found.")
+        return 0
+
+    df = pd.read_csv(source_path)
+    df = _normalize_nonsteam_df(df)
+    n = len(df)
+    if log:
+        log(f"Checking {n} games against Steam store...")
+
+    for i, (idx, row) in enumerate(df.iterrows()):
+        name = str(row.get("Game Title", "")).strip()
+        platforms_str = str(row.get("Platforms", ""))
+
+        try:
+            app_id = _search_steam_app_id(name)
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 429:
+                if log:
+                    log("Rate limited by Steam. Waiting 10 seconds...")
+                time.sleep(10)
+                app_id = _search_steam_app_id(name)
+            else:
+                app_id = None
+
+        if app_id is not None:
+            status = _detect_steam_status(app_id, platforms_str)
+        else:
+            # No Steam search match — use platforms only
+            plats_lower = platforms_str.lower()
+            if any(kw in plats_lower for kw in _PC_PLATFORM_KEYWORDS):
+                status = "Non-Steam PC Game"
+            else:
+                status = "Console / Other"
+
+        df.at[idx, "SteamStatus"] = status
+
+        if log and (i + 1) % 25 == 0:
+            log(f"  {i + 1}/{n} checked...")
+
+        time.sleep(1.5)
+
+    df.to_csv(source_path, index=False)
+    if log:
+        log(f"Done. SteamStatus updated for all {n} games.")
+    return n
+
+
 def _normalize_nonsteam_df(df: pd.DataFrame) -> pd.DataFrame:
     """Rename alias columns to canonical names and enforce NONSTEAM_COLUMNS order."""
     df = df.rename(columns=_NONSTEAM_RENAME)
@@ -361,6 +538,9 @@ def _append_to_raw_nonsteam(log) -> int:
     if new_df.empty:
         log("Temp export was empty -- no games found")
         return 0
+
+    # Detect SteamStatus via Steam API before AppId is dropped by normalization
+    new_df = _fill_steam_status(new_df, log)
 
     # Normalise to canonical column names before any further processing
     new_df["date_appended"] = None  # placeholder; stamped only on truly new rows below
