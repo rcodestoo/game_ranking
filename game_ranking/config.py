@@ -13,6 +13,8 @@ CSV_NON_STEAM = RAW_DIR / 'raw_non_steam_2026-03-09.csv' #'raw_non_steam.csv'
 DEV_LIST = DATA_DIR / 'developer_list.xlsx'
 GENRE_LIST = DATA_DIR / 'genre_list.xlsx'
 INVENTORY_FILE = DATA_DIR / 'team_reviews_game_inventory.csv'
+TRENDS_CACHE_FILE = DATA_DIR / "nonsteam_trends_cache.csv"
+STEAMSPY_CACHE_FILE = RAW_DIR / "steamspy_cache.csv"
 
 
 def get_latest_steam_csv() -> "Path":

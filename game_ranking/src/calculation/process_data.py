@@ -3,12 +3,12 @@ import pandas as pd
 import math
 import requests
 from config import CSV_STEAM, CSV_NON_STEAM, DEV_LIST, GENRE_LIST, INVENTORY_FILE
-from src.calculation.scraper import scrape_google_trends
+from src.calculation.scraper import scrape_google_trends, fetch_game_trends
 
 #LOAD DEVELOPER AND GENRE LIST
 developer_list = pd.read_excel(DEV_LIST)
 genre_list = pd.read_excel(GENRE_LIST)
-inventory = pd.read_csv(INVENTORY_FILE)
+inventory = pd.read_csv(INVENTORY_FILE, index_col=0)
 steam_list = pd.read_csv(CSV_STEAM)
 
 #FUNCTION TO LOAD DATA
@@ -26,7 +26,7 @@ def load_data(steam_report=None, non_steam_report=None, steam_df=None, nonsteam_
     if steam_df is None:
         steam_df = pd.read_csv(steam_report)
     if nonsteam_df is None:
-        nonsteam_df = pd.read_csv(non_steam_report)
+        nonsteam_df = pd.read_csv(non_steam_report, encoding='utf-8-sig')
     return steam_df, nonsteam_df, developer_list, genre_list, inventory
 
 #CLEANING DEV AND GENRE LIST
@@ -143,6 +143,7 @@ def handle_change():
     did_change = bool(changes["edited_rows"] or new_rows or changes["deleted_rows"])
     if did_change:
         st.session_state.df = df
+        st.session_state.game_data = df
         st.session_state.sum = int(df["Game Name"].count())
     try:
             df.to_csv(INVENTORY_FILE, index=True)
@@ -150,17 +151,8 @@ def handle_change():
             st.error(f"Failed to save changes to CSV: {e}")
 
 
-def calculate_google_trends_points(game_name):
-    try:
-        trends_data = scrape_google_trends([game_name], timeframe='today 12-m')
-        if not trends_data.empty and game_name in trends_data.columns:
-            latest_interest = trends_data[game_name].iloc[-1]
-            return latest_interest
-        else:
-            return 0
-    except Exception as e:
-        st.error(f"Error fetching Google Trends data for {game_name}: {e}")
-        return e
+def calculate_google_trends_points(game_name: str) -> int:
+    return fetch_game_trends(game_name)
     
 
 def genre_trend(genre_list):
@@ -179,28 +171,40 @@ def genre_trend(genre_list):
     return trends_data
 
 
-def player_counts():
-    base_api_call = "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
-    game_names = []
-    game_id = []
-    for index, row in inventory.iterrows():
-        game_name = row['Game Name']
-        game_names.append(game_name)
-    for index, row in steam_list.iterrows():
-        steam_game_name = row['Game Name']
-        if game_name.strip().lower() == steam_game_name.strip().lower():
-            appid = row['AppID']
-            game_id.append(appid)
+def populate_appids():
+    """
+    Cross-reference inventory game names against raw_steam.csv to populate
+    the steam_appid column. Only fills Steam platform rows where steam_appid
+    is missing. Saves the updated inventory back to CSV.
+    """
+    from config import get_latest_steam_csv
 
-            # api_url = f"{base_api_call}?appid={appid}"
-            # try:
-            #     response = requests.get(api_url)
-            #     if response.status_code == 200:
-            #         data = response.json()
-            #         player_count = data.get('response', {}).get('player_count', 0)
-            #         print(f"Current players for {game_name}: {player_count}")
-            #         inventory.at[index, 'Current Players'] = player_count
-            #     else:
-            #         print(f"Failed to fetch player count for {game_name}. Status code: {response.status_code}")
-            # except Exception as e:
-            #     print(f"Error fetching player count for {game_name}: {e}")
+    inv = pd.read_csv(INVENTORY_FILE, index_col=0)
+
+    if 'steam_appid' not in inv.columns:
+        inv['steam_appid'] = pd.NA
+
+    steam_mask = inv['Platform'].str.contains('Steam', case=False, na=False)
+    missing_mask = inv['steam_appid'].isna()
+    to_match = inv[steam_mask & missing_mask]
+
+    if to_match.empty:
+        return
+
+    raw_steam = pd.read_csv(get_latest_steam_csv())
+    # Build name → AppId lookup (case-insensitive)
+    name_to_appid = {
+        str(row['Name']).strip().lower(): row['AppId']
+        for _, row in raw_steam.iterrows()
+    }
+
+    matched = False
+    for idx, row in to_match.iterrows():
+        game_name = str(row['Game Name']).strip()
+        appid = name_to_appid.get(game_name.lower())
+        if appid is not None:
+            inv.at[idx, 'steam_appid'] = int(appid)
+            matched = True
+
+    if matched:
+        inv.to_csv(INVENTORY_FILE, index=True)

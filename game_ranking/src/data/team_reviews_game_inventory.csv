@@ -1,149 +1,102 @@
-,Game Name,Date Purchased,Physical,Digital,Platform,Account,Inactive,On Hold,Active,Reviewed,Destop,Tablet,Mobile,Bricks,Word,Figma,Price
-0,,,,,,,,,,,,,,,,,
-1,Marvel Rivals,Free To Play,False,True,PC (Steam),Full access,False,False,True,True,True,False,True,Bricks Link,,,Free
-2,Path of Exile 2,18/12/2024,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"27,75€"
-3,The Stone of Madness,15/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"26,09€"
-4,Hyper Light Drifter,15/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"26,09€"
-5,Hyper Light Breaker,15/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,Free
-6,FREEDOM WARS Remastered,16/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"39,99€"
-7,DYNASTY WARRIORS: ORIGINS,16/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"79,99€"
-8,Palworld,20/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"28,99€"
-9,HELLDIVERS 2,20/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€"
-10,Black Myth: Wukong,20/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"59,99€"
-11,Orcs Must Die! Deathtrap,31/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"28,99€"
-12,Kingdom Come: Deliverance II,31/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"59,99€"
-13,Split Fiction,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"49,99€"
-14,Sid Meier's Civilization VII,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"69,99€"
-15,Monster Hunter Wilds,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"69,99€"
-16,Lost Records: Bloom & Rage,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"35,99€"
-17,The Legend of Heroes: Trails through Daybreak II,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"59,99€"
-18,Atomfall,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"49,99€"
-19,Wanderstop,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"22,99€"
-20,Schedule I,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"19,50€"
-21,R.E.P.O.,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"9,75€"
-22,inZOI,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€"
-23,Grimoire Groves,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"19,50€"
-24,Crashlands,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"6,65€"
-25,Crashlands 2,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"22,05€"
-26,Mandragora: Whispers of the Witch Tree,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"39,99€"
-27,Clair Obscur: Expedition 33,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,False,True,True,False,False,Bricks Link,,,"44,99€"
-28,Assassin's Creed Shadows,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"69,99€"
-29,Diddy Kong Racing,14/4/2025,True,False,Nintendo 64,Office,True,False,False,False,False,False,False,Bricks Link,,,
-30,Donkey Kong Country™ Returns HD,14/4/2025,True,False,Nintendo Switch,Office,True,False,False,False,False,False,False,,,,"53,99€"
-31,"Yes, Your Grace: Snowfall",16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"24,50€"
-32,Survival Machine,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"13,43€"
-33,RoadCraft,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€"
-34,The Precinct,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"25,49€"
-35,Elden Ring: Nightreign,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€"
-36,DOOM: The Dark Ages,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"79,99€"
-37,Deliver At All Costs,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"26,99€"
-38,Blue Prince,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€"
-39,Tinkerlands,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"12,99€"
-40,Stellar Blade,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€"
-41,Rematch,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"24,99€"
-42,JDM: Japanese Drift Master,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"34,99€"
-43,Gex Trilogy,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"29,99€"
-44,FBC: Firebreak,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€"
-45,Dune: Awakening,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"49,99€"
-46,Deltarune,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"23,99€"
-47,Crime Simulator,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"8,09€"
-48,The Alters,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"31,49€"
-49,Mario Kart World,26/6/2025,True,False,Nintendo Switch,Office,True,False,False,False,False,False,False,,,,
-50,Neon Abyss 2,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"17,55€"
-51,The Drifter,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"16,57€"
-52,Wildgate,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"29,99€"
-53,Wuchang: Fallen Feathers,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"49,99€"
-54,Killing Floor 3,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€"
-55,Grounded 2,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€"
-56,Donkey Kong Bananza,30/7/2025,True,False,Nintendo Switch 2,Office & Marzia's house (2 copies),False,True,False,False,False,False,False,Bricks Link,,,"69,99€"
-57,Metal Gear Solid Δ: Snake Eater,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"79,99€"
-58,Arena Breakout: Infinite,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,Free
-59,Borderlands 4,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"69,99€"
-60,Hades II,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"28,99€"
-61,Dying Light: The Beast,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"59,99€"
-62,Hollow Knight Silksong,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"19,50€"
-63,Silent Hill f,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"79,99€"
-64,Mafia: The Old Country,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€"
-65,Cronos: The New Dawn,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€"
-66,Sword of the sea,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"28,99€"
-67,2XKO,Free To Play,False,True,RiotGames website,reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,Free
-68,Battlefield 6,11/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€"
-69,Megabonk ,10/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"9,75€"
-70,Little Nightmares 3,10/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"37,19€"
-71,Stick it to the Stickman,15/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"4,99€"
-72,EA SPORTS FC 26,15/10/2025,True,False,Nintendo Switch 2,,True,False,False,False,False,False,False,,,,
-73,Ghost of Yotei,11/10/2025,True,False,PlayStation 5,Office,False,True,False,False,False,False,False,Bricks Link,,,"69,99€"
-74,Vampire: The Masquerade - Bloodlines 2,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€"
-75,ARC Raiders,30/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€"
-76,The Outer Worlds 2,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"69,99€"
-77,Escape from Duckov,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"15,83€"
-78,Ninja Gaiden 4,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€"
-79,Pokemon Legends: Z-A,29/10/2025,True,False,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"57,99€"
-80,Jurassic World Evolution 3,3/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"59,99€"
-81,Europa Universalis V,12/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€"
-82,7 Days of Blood Moons,12/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"19,50€"
-83,Dispatch ,12/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"28,99€"
-84,Death Stranding 2,12/11/2025,False,False,PlayStation 5,,False,False,False,False,False,False,False,,,,
-85,South of Midnight,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€"
-86,Sonic Racing: CrossWorlds,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€"
-87,Peak,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"7,49€"
-88,Indiana Jones and the Great Circle,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"48,99€"
-89,F1 25,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€"
-90,Escape from Tarkov,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"42,49€"
-91,BALL x PIT,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"14,99€"
-92,Avowed,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"46,89€"
-93,Absolum,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"24,99€"
-94,Routine,10/12/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"22,49€"
-95,Terra Invicta,6/1/2026,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"25,99€"
-96,StarRupture,6/1/2026,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"15,99€"
-97,Nioh 3,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"79,99€"
-98,Mewgenics,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"26,09€"
-99,Cairn,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"26,99€"
-100,ReAnimal,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€"
-101,High on life 2,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"58,99€"
-102,,,False,False,,,False,False,False,False,False,False,False,,,,
-103,,,False,False,,,False,False,False,False,False,False,False,,,,
-104,,,False,False,,,False,False,False,False,False,False,False,,,,
-105,,,False,False,,,False,False,False,False,False,False,False,,,,
-106,,,False,False,,,False,False,False,False,False,False,False,,,,
-107,,,False,False,,,False,False,False,False,False,False,False,,,,
-108,,,False,False,,,False,False,False,False,False,False,False,,,,
-109,,,False,False,,,False,False,False,False,False,False,False,,,,
-110,,,False,False,,,False,False,False,False,False,False,False,,,,
-111,,,False,False,,,False,False,False,False,False,False,False,,,,
-112,,,False,False,,,False,False,False,False,False,False,False,,,,
-113,,,False,False,,,False,False,False,False,False,False,False,,,,
-114,,,False,False,,,False,False,False,False,False,False,False,,,,
-115,,,False,False,,,False,False,False,False,False,False,False,,,,
-116,,,False,False,,,False,False,False,False,False,False,False,,,,
-117,,,False,False,,,False,False,False,False,False,False,False,,,,
-118,,,False,False,,,False,False,False,False,False,False,False,,,,
-119,,,False,False,,,False,False,False,False,False,False,False,,,,
-120,,,False,False,,,False,False,False,False,False,False,False,,,,
-121,,,False,False,,,False,False,False,False,False,False,False,,,,
-122,,,False,False,,,False,False,False,False,False,False,False,,,,
-123,,,False,False,,,False,False,False,False,False,False,False,,,,
-124,,,False,False,,,False,False,False,False,False,False,False,,,,
-125,,,False,False,,,False,False,False,False,False,False,False,,,,
-126,,,False,False,,,False,False,False,False,False,False,False,,,,
-127,,,False,False,,,False,False,False,False,False,False,False,,,,
-128,,,False,False,,,False,False,False,False,False,False,False,,,,
-129,,,False,False,,,False,False,False,False,False,False,False,,,,
-130,,,False,False,,,False,False,False,False,False,False,False,,,,
-131,,,False,False,,,False,False,False,False,False,False,False,,,,
-132,,,False,False,,,False,False,False,False,False,False,False,,,,
-133,,,False,False,,,False,False,False,False,False,False,False,,,,
-134,,,False,False,,,False,False,False,False,False,False,False,,,,
-135,,,False,False,,,False,False,False,False,False,False,False,,,,
-136,,,False,False,,,False,False,False,False,False,False,False,,,,
-137,,,False,False,,,False,False,False,False,False,False,False,,,,
-138,,,False,False,,,False,False,False,False,False,False,False,,,,
-139,,,False,False,,,False,False,False,False,False,False,False,,,,
-140,,,False,False,,,False,False,False,False,False,False,False,,,,
-141,,,False,False,,,False,False,False,False,False,False,False,,,,
-142,,,False,False,,,False,False,False,False,False,False,False,,,,
-143,,,False,False,,,False,False,False,False,False,False,False,,,,
-144,,,False,False,,,False,False,False,False,False,False,False,,,,
-145,,,False,False,,,False,False,False,False,False,False,False,,,,
-146,,,False,False,,,False,False,False,False,False,False,False,,,,
-147,,,False,False,,,False,False,False,False,False,False,False,,,,
+,S.NO,Game Name,Date Purchased,Physical,Digital,Platform,Account,Inactive,On Hold,Active,Reviewed,Desktop,Tablet,Mobile,Bricks,Word,Figma,Price,steam_appid
+0,0,Marvel Rivals,Free To Play,False,True,PC (Steam),Full access,False,False,True,True,True,False,True,Bricks Link,,,Free,2767030.0
+1,1,Path of Exile 2,18/12/2024,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"27,75€",2694490.0
+2,2,The Stone of Madness,15/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"26,09€",1309710.0
+3,3,Hyper Light Drifter,15/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"26,09€",257850.0
+4,4,Hyper Light Breaker,15/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,Free,1534840.0
+5,5,FREEDOM WARS Remastered,16/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"39,99€",3004100.0
+6,6,DYNASTY WARRIORS: ORIGINS,16/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"79,99€",2384580.0
+7,7,Palworld,20/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"28,99€",1623730.0
+8,8,HELLDIVERS 2,20/1/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€",553850.0
+9,9,Black Myth: Wukong,20/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"59,99€",2358720.0
+10,10,Orcs Must Die! Deathtrap,31/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"28,99€",2273980.0
+11,12,Kingdom Come: Deliverance II,31/1/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"59,99€",1771300.0
+12,13,Split Fiction,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"49,99€",2001120.0
+13,14,Sid Meier's Civilization VII,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"69,99€",1295660.0
+14,15,Monster Hunter Wilds,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"69,99€",2246340.0
+15,16,Lost Records: Bloom & Rage,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"35,99€",1902960.0
+16,17,The Legend of Heroes: Trails through Daybreak II,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"59,99€",2668430.0
+17,18,Atomfall,28/2/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"49,99€",801800.0
+18,19,Wanderstop,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"22,99€",1299460.0
+19,20,Schedule I,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"19,50€",3164500.0
+20,21,R.E.P.O.,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"9,75€",3241660.0
+21,22,inZOI,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€",2456740.0
+22,23,Grimoire Groves,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"19,50€",1830430.0
+23,24,Crashlands,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"6,65€",391730.0
+24,25,Crashlands 2,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"22,05€",1401730.0
+25,26,Mandragora: Whispers of the Witch Tree,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"39,99€",1721060.0
+26,27,Clair Obscur: Expedition 33,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,False,True,True,False,False,Bricks Link,,,"44,99€",1903340.0
+27,28,Assassin's Creed Shadows,14/4/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,True,Bricks Link,,,"69,99€",3159330.0
+28,29,Diddy Kong Racing,14/4/2025,True,False,Nintendo 64,Office,True,False,False,False,False,False,False,Bricks Link,,,,
+29,30,Donkey Kong Country™ Returns HD,14/4/2025,True,False,Nintendo Switch,Office,True,False,False,False,False,False,False,,,,"53,99€",
+30,31,"Yes, Your Grace: Snowfall",16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"24,50€",1373090.0
+31,32,Survival Machine,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"13,43€",1601330.0
+32,33,RoadCraft,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€",2104890.0
+33,34,The Precinct,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"25,49€",490110.0
+34,35,Elden Ring: Nightreign,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€",2622380.0
+35,36,DOOM: The Dark Ages,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"79,99€",3017860.0
+36,37,Deliver At All Costs,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"26,99€",1880610.0
+37,38,Blue Prince,16/5/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€",1569580.0
+38,39,Tinkerlands,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"12,99€",2617700.0
+39,40,Stellar Blade,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€",3489700.0
+40,41,Rematch,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"24,99€",2067680.0
+41,42,JDM: Japanese Drift Master,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"34,99€",1153410.0
+42,43,Gex Trilogy,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"29,99€",3183970.0
+43,44,FBC: Firebreak,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€",2272540.0
+44,45,Dune: Awakening,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"49,99€",1172710.0
+45,46,Deltarune,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"23,99€",1671210.0
+46,47,Crime Simulator,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"8,09€",2737070.0
+47,48,The Alters,20/6/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"31,49€",1601570.0
+48,49,Mario Kart World,26/6/2025,True,False,Nintendo Switch,Office,True,False,False,False,False,False,False,,,,,
+49,50,Neon Abyss 2,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"17,55€",2235200.0
+50,51,The Drifter,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"16,57€",1170570.0
+51,52,Wildgate,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"29,99€",3504780.0
+52,53,Wuchang: Fallen Feathers,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"49,99€",2277560.0
+53,54,Killing Floor 3,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€",1430190.0
+54,55,Grounded 2,30/7/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€",2661300.0
+55,56,Donkey Kong Bananza,30/7/2025,True,False,Nintendo Switch 2,Office & Marzia's house (2 copies),False,True,False,False,False,False,False,Bricks Link,,,"69,99€",
+56,57,Metal Gear Solid Δ: Snake Eater,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"79,99€",2417610.0
+57,58,Arena Breakout: Infinite,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,Free,2073620.0
+58,59,Borderlands 4,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"69,99€",1285190.0
+59,60,Hades II,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"28,99€",1145350.0
+60,61,Dying Light: The Beast,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,False,False,False,False,Bricks Link,,,"59,99€",3008130.0
+61,62,Hollow Knight Silksong,16/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"19,50€",1030300.0
+62,63,Silent Hill f,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"79,99€",2947440.0
+63,64,Mafia: The Old Country,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€",1941540.0
+64,65,Cronos: The New Dawn,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€",2101960.0
+65,66,Sword of the sea,29/9/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"28,99€",2453160.0
+66,67,2XKO,Free To Play,False,True,RiotGames website,reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,Free,
+67,68,Battlefield 6,11/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€",2807960.0
+68,69,Megabonk ,10/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"9,75€",3405340.0
+69,70,Little Nightmares 3,10/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"37,19€",1392860.0
+70,71,Stick it to the Stickman,15/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"4,99€",2085540.0
+71,72,EA SPORTS FC 26,15/10/2025,True,False,Nintendo Switch 2,,True,False,False,False,False,False,False,,,,,
+72,73,Ghost of Yotei,11/10/2025,True,False,PlayStation 5,Office,False,True,False,False,False,False,False,Bricks Link,,,"69,99€",
+73,74,Vampire: The Masquerade - Bloodlines 2,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€",532790.0
+74,75,ARC Raiders,30/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"39,99€",1808500.0
+75,76,The Outer Worlds 2,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"69,99€",1449110.0
+76,77,Escape from Duckov,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"15,83€",3167020.0
+77,78,Ninja Gaiden 4,29/10/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€",2627260.0
+78,79,Pokemon Legends: Z-A,29/10/2025,True,False,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"57,99€",
+79,80,Jurassic World Evolution 3,3/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"59,99€",2958130.0
+80,81,Europa Universalis V,12/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"59,99€",3450310.0
+81,82,7 Days of Blood Moons,12/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"19,50€",
+82,83,Dispatch ,12/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"28,99€",2592160.0
+83,84,Death Stranding 2,12/11/2025,False,False,PlayStation 5,,False,False,False,False,False,False,False,,,,,
+84,85,South of Midnight,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€",1934570.0
+85,86,Sonic Racing: CrossWorlds,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"69,99€",2486820.0
+86,87,Peak,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"7,49€",923260.0
+87,88,Indiana Jones and the Great Circle,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"48,99€",2677660.0
+88,89,F1 25,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"29,99€",3059520.0
+89,90,Escape from Tarkov,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"42,49€",3932890.0
+90,91,BALL x PIT,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"14,99€",2062430.0
+91,92,Avowed,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,True,False,False,False,False,False,Bricks Link,,,"46,89€",2457220.0
+92,93,Absolum,26/11/2025,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"24,99€",1904480.0
+93,94,Routine,10/12/2025,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"22,49€",3402170.0
+94,95,Terra Invicta,6/1/2026,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"25,99€",1176470.0
+95,96,StarRupture,6/1/2026,False,True,PC (Steam),reviewteamthegamessphere,False,False,True,True,True,False,False,Bricks Link,,,"15,99€",1631270.0
+96,97,Nioh 3,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"79,99€",3681010.0
+97,98,Mewgenics,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"26,09€",686060.0
+98,99,Cairn,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"26,99€",1588550.0
+99,100,ReAnimal,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"39,99€",2129530.0
+100,101,High on life 2,19/2/2026,False,True,PC (Steam),reviewteamthegamessphere,True,False,False,False,False,False,False,,,,"58,99€",2069250.0

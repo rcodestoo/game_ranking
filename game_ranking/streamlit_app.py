@@ -10,9 +10,11 @@ import threading
 _ns_thread_state = {"result": None, "running": False}
 _steam_thread_state = {"result": None, "running": False}
 import datetime as dt
-from src.calculation.process_data import clean_dev_genre_list, flagging, calculate_developer_weighted_points, load_data, calculate_follower_weighted_points, calculate_developer_weighted_points, handle_change
+import time
+from src.calculation.process_data import clean_dev_genre_list, flagging, calculate_developer_weighted_points, load_data, calculate_follower_weighted_points, calculate_developer_weighted_points, handle_change, populate_appids, calculate_google_trends_points
 from src.calculation.scraper import scrape_google_trends
-from config import INVENTORY_FILE, get_latest_steam_csv, get_latest_nonsteam_csv
+from src.calculation.steam_players import fetch_player_data, fetch_player_counts_if_needed, resolve_inventory_appids
+from config import INVENTORY_FILE, TRENDS_CACHE_FILE, STEAMSPY_CACHE_FILE, get_latest_steam_csv, get_latest_nonsteam_csv
 from pipeline.state import get_last_run_info, get_next_window
 from steam_pipeline import run_steam_scraper, append_from_uploaded_steam_csv
 from nonsteam_pipeline import run_nonsteam_scraper, append_from_uploaded_nonsteam_csv, verify_single_game_steam_status
@@ -119,7 +121,7 @@ def reload_nonsteam_from_csv():
     """Re-read the latest raw_non_steam_YYYY-MM-DD.csv from disk and update session state."""
     try:
         latest = get_latest_nonsteam_csv()
-        tmp = pd.read_csv(latest)
+        tmp = pd.read_csv(latest, encoding='utf-8-sig')
         st.session_state.df_nonsteam = tmp
         st.session_state.nonsteam_source = latest.name
         st.session_state.nonsteam_cleaned = True
@@ -273,6 +275,26 @@ def _sync_from_inv_dates():
     st.session_state.steam_end_date   = st.session_state.inv_end_date
     st.session_state.ns_start_date    = st.session_state.inv_start_date
     st.session_state.ns_end_date      = st.session_state.inv_end_date
+
+# ── Inventory AppID population + hourly player count fetch ────────────────────
+# populate_appids() does a cheap CSV lookup against raw_steam.csv.
+# resolve_inventory_appids() fills any remaining gaps by checking the local
+# AppID cache (built from prior SteamSpy lookups) — cache hits are instant.
+populate_appids()
+_inv_for_fetch = pd.read_csv(INVENTORY_FILE, index_col=0)
+_inv_for_fetch, _n_appids_resolved = resolve_inventory_appids(_inv_for_fetch)
+if _n_appids_resolved > 0:
+    _inv_for_fetch.to_csv(INVENTORY_FILE, index=True)
+    if "game_data" in st.session_state:
+        st.session_state.game_data = pd.read_csv(INVENTORY_FILE, index_col=0)
+st.session_state.player_count_history = fetch_player_counts_if_needed(_inv_for_fetch)
+
+if "nonsteam_trends" not in st.session_state:
+    if TRENDS_CACHE_FILE.exists():
+        _tc = pd.read_csv(TRENDS_CACHE_FILE)
+        st.session_state.nonsteam_trends = dict(zip(_tc["game_name"], _tc["trends_score"]))
+    else:
+        st.session_state.nonsteam_trends = {}
 
 # ── TABS ───────────────────────────────────────────────────────────────────────
 tab_steam, tab_nonsteam, tab_inventory = st.tabs(
@@ -655,7 +677,7 @@ with tab_nonsteam:
         # Update the CSV on disk (write to temp file first, then replace)
         source = get_latest_nonsteam_csv()
         try:
-            df_disk = pd.read_csv(source)
+            df_disk = pd.read_csv(source, encoding='utf-8-sig')
             df_disk.loc[df_disk["Game Title"] == selected_game, "SteamStatus"] = status
             tmp = source.with_suffix(".tmp")
             df_disk.to_csv(tmp, index=False)
@@ -671,6 +693,10 @@ with tab_nonsteam:
     # ── Sidebar config ────────────────────────────────────────────────────────
     st.sidebar.header("Non-Steam Report Configuration")
     st.info("The Non-Steam ranking is based on YouTube Views adjusted for the time since release. Games with higher adjusted views are prioritised.")
+    w_trends = st.sidebar.slider(
+        "Trends Weight", 0.0, 1.0, 0.0, step=0.1,
+        help="Blends Google Trends score into the ranking. 0 = ignored, 1 = full boost."
+    )
 
     # Pre-processing: label unchecked games, remove Steam games, parse dates
     df_nonsteam['SteamStatus'] = df_nonsteam['SteamStatus'].fillna('Needs Verification')
@@ -685,9 +711,9 @@ with tab_nonsteam:
     # ── Formula display ───────────────────────────────────────────────────────
     with st.expander("📐 Non-Steam Ranking Formula", expanded=False): # type: ignore
         st.write("### Current Non-Steam Formula")
-        st.latex(r"1. Days since Release = (Today's Date - Release Date)")
-        st.latex(r"2. Adjusted Views = YouTube Views / (1 + (Days Since Release / 365))")
-        st.latex(r"Games with the highest Adjusted Views are ranked highest.")
+        st.latex(r"1.\ \text{Adjusted Views} = \frac{\text{YouTube Views}}{1 + \text{Days} / 365}")
+        st.latex(r"2.\ \text{Combined Score} = \text{Adjusted Views} \times (1 + w_{trends} \times \text{Trends Score} / 100)")
+        st.latex(r"3.\ \text{Games are ranked by Combined Score (descending)}")
 
     # ── Score calculation ─────────────────────────────────────────────────────
     # Use YouTube ReleaseDate for days calculation; fall back to game Release Date
@@ -703,7 +729,17 @@ with tab_nonsteam:
         df_nonsteam_filter['YouTube Views'] / (1 + df_nonsteam_filter['Days_Since_Release'] / 365)
     ).round(2)
 
-    df_non_steam_ranked = df_nonsteam_filter.sort_values('adjusted_views', ascending=False, ignore_index=True)
+    # Merge cached trends scores (0 if not yet fetched)
+    df_nonsteam_filter['trends_score'] = (
+        df_nonsteam_filter['Game Title'].map(st.session_state.nonsteam_trends).fillna(0).astype(int)
+    )
+
+    # Combined ranking score
+    df_nonsteam_filter['combined_score'] = (
+        df_nonsteam_filter['adjusted_views'] * (1 + w_trends * df_nonsteam_filter['trends_score'] / 100)
+    ).round(2)
+
+    df_non_steam_ranked = df_nonsteam_filter.sort_values('combined_score', ascending=False, ignore_index=True)
 
     # ── Cross-check against Steam titles ──────────────────────────────────────
     steam_titles = set(
@@ -712,6 +748,26 @@ with tab_nonsteam:
     df_non_steam_ranked['_on_steam'] = (
         df_non_steam_ranked['Game Title'].astype(str).str.strip().str.lower().isin(steam_titles)
     )
+
+    # ── Fetch Trends button ───────────────────────────────────────────────────
+    if st.button("📊 Fetch Trends", key="fetch_nonsteam_trends",
+                 help="Fetch Google Trends interest scores for all visible games (1–2 min)"):
+        games = df_non_steam_ranked["Game Title"].dropna().unique().tolist()
+        bar = st.progress(0, text="Starting trends fetch…")
+        for i, game in enumerate(games):
+            try:
+                score = calculate_google_trends_points(game)
+                st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+            except Exception:
+                st.session_state.nonsteam_trends[game] = 0
+            # Save after every game so partial results survive sleep/crash
+            cache_df = pd.DataFrame(
+                [{"game_name": k, "trends_score": v} for k, v in st.session_state.nonsteam_trends.items()]
+            )
+            cache_df.to_csv(TRENDS_CACHE_FILE, index=False)
+            time.sleep(1.5)
+            bar.progress((i + 1) / len(games), text=f"Fetching {i+1}/{len(games)}: {game}")
+        st.toast("Trends data updated!", icon="📊")
 
     # Initialize reset flag for Non-Steam filters
     if "ns_reset_filters" not in st.session_state:
@@ -829,7 +885,8 @@ with tab_nonsteam:
     st.caption(f"Showing **{len(df_filtered_ns)}** of **{len(df_non_steam_ranked)}** games")
 
     cols_to_show = [
-        'Game Title', 'adjusted_views', 'YouTube Views', 'Days_Since_Release',
+        'Game Title', 'combined_score', 'trends_score', 'adjusted_views',
+        'YouTube Views', 'Days_Since_Release',
         'Release Date', 'Developers', 'Platforms', 'Genres',
         'YouTube URL', 'YouTube ReleaseDate', 'SteamStatus'
     ]
@@ -846,7 +903,7 @@ with tab_nonsteam:
         if col in df_nonsteam_display.columns:
             df_nonsteam_display[col] = df_nonsteam_display[col].apply(format_list_column)
 
-    for col in ['adjusted_views', 'YouTube Views', 'Days_Since_Release']:
+    for col in ['combined_score', 'adjusted_views', 'YouTube Views', 'Days_Since_Release', 'trends_score']:
         if col in df_nonsteam_display.columns:
             df_nonsteam_display[col] = pd.to_numeric(df_nonsteam_display[col], errors='coerce').round(2)
 
@@ -858,6 +915,8 @@ with tab_nonsteam:
         highlight_new_rows(df_nonsteam_display),
         use_container_width=True,
         column_config={
+            "combined_score":     st.column_config.NumberColumn(format="%.2f"),
+            "trends_score":       st.column_config.NumberColumn(format="%d"),
             "adjusted_views":     st.column_config.NumberColumn(format="%.2f"),
             "YouTube Views":      st.column_config.NumberColumn(format="%d"),
             "Days_Since_Release": st.column_config.NumberColumn(format="%d"),
@@ -870,7 +929,7 @@ with tab_nonsteam:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_inventory:
     if "game_data" not in st.session_state:
-        st.session_state.game_data = pd.read_csv(INVENTORY_FILE)
+        st.session_state.game_data = pd.read_csv(INVENTORY_FILE, index_col=0)
 
     st.header("🎮 Game Tracker")
     st.subheader("Game Library")
@@ -1009,31 +1068,313 @@ with tab_inventory:
     with col5:
         st.metric("Inactive", int(game_data_bools['Inactive'].sum()) if 'Inactive' in game_data_bools.columns else 0, border=True)
 
-    # ── Filtered preview ──────────────────────────────────────────────────────
+    # ── Single table with edit toggle ─────────────────────────────────────────
     st.divider()
-    st.subheader("Filtered Library")
-    st.caption(f"Showing **{len(filtered)}** of **{len(st.session_state.game_data)}** games")
-    st.dataframe(filtered, width='stretch')
+    st.subheader("Game Library")
 
-    # ── Editable full table ───────────────────────────────────────────────────
-    st.info("💡 Edit the table directly, toggle checkboxes, or use the + button to add rows. Changes save automatically!")
-    st.data_editor(
-        st.session_state.game_data,
-        num_rows="dynamic",
-        key="game_editor",
-        column_config={
-            "Game Name":      st.column_config.TextColumn("Game", width="medium", required=True),
-            "Date Purchased": st.column_config.TextColumn("Date Purchased"),
-            "Physical":       st.column_config.CheckboxColumn("Physical"),
-            "Digital":        st.column_config.CheckboxColumn("Digital"),
-            "Platform":       st.column_config.TextColumn("Platform"),
-            "Account":        st.column_config.TextColumn("Account"),
-            "Inactive":       st.column_config.CheckboxColumn("Inactive"),
-            "On Hold":        st.column_config.CheckboxColumn("On Hold"),
-            "Active":         st.column_config.CheckboxColumn("Active"),
-            "Reviewed":       st.column_config.CheckboxColumn("Reviewed"),
-            "Links":          st.column_config.LinkColumn("Links", display_text="Open Link"),
-        },
-        disabled=["Game Name"],
-        on_change=handle_change,
-    )
+    if "inv_edit_mode" not in st.session_state:
+        st.session_state.inv_edit_mode = False
+
+    caption_col, btn_col = st.columns([5, 1])
+    with caption_col:
+        st.caption(f"Showing **{len(filtered)}** of **{len(st.session_state.game_data)}** games")
+
+    if not st.session_state.inv_edit_mode:
+        with btn_col:
+            if st.button("✏️ Edit", key="inv_edit_btn"):
+                st.session_state.inv_edit_mode = True
+                snap = filtered.copy()
+                if 'Date Purchased' in snap.columns:
+                    snap['Date Purchased'] = snap['Date Purchased'].dt.strftime('%Y-%m-%d').where(
+                        snap['Date Purchased'].notna(), other=None
+                    )
+                st.session_state.inv_edit_data = snap
+                st.rerun()
+        st.dataframe(filtered, use_container_width=True)
+    else:
+        with btn_col:
+            if st.button("✅ Done", key="inv_done_btn"):
+                st.session_state.inv_edit_mode = False
+                if "game_editor" in st.session_state:
+                    del st.session_state["game_editor"]
+                st.rerun()
+        st.info("💡 Edit cells, toggle checkboxes, or use + to add rows. Changes save automatically.")
+        st.data_editor(
+            st.session_state.inv_edit_data,
+            num_rows="dynamic",
+            key="game_editor",
+            use_container_width=True,
+            column_config={
+                "Game Name":      st.column_config.TextColumn("Game", width="medium", required=True),
+                "Date Purchased": st.column_config.TextColumn("Date Purchased"),
+                "Physical":       st.column_config.CheckboxColumn("Physical"),
+                "Digital":        st.column_config.CheckboxColumn("Digital"),
+                "Platform":       st.column_config.TextColumn("Platform"),
+                "Account":        st.column_config.TextColumn("Account"),
+                "Inactive":       st.column_config.CheckboxColumn("Inactive"),
+                "On Hold":        st.column_config.CheckboxColumn("On Hold"),
+                "Active":         st.column_config.CheckboxColumn("Active"),
+                "Reviewed":       st.column_config.CheckboxColumn("Reviewed"),
+                "Links":          st.column_config.LinkColumn("Links", display_text="Open Link"),
+            },
+            on_change=handle_change,
+        )
+
+    # ── Player Trend (Inactive & On Hold) ─────────────────────────────────────
+    st.divider()
+    with st.expander("📈 Player Trend — Steam Games", expanded=True):
+        st.caption(
+            "Hourly concurrent player snapshots for all Steam games in the inventory. "
+            "Collected automatically while the app is open — click Fetch Now to get an immediate reading."
+        )
+
+        if st.button("🔄 Fetch Now", key="fetch_players_now", help="Force an immediate player count snapshot"):
+            with st.spinner("Fetching player counts..."):
+                _inv = pd.read_csv(INVENTORY_FILE, index_col=0)
+                st.session_state.player_count_history = fetch_player_counts_if_needed(_inv, force=True)
+            st.toast("Player counts updated!", icon="✅")
+            st.rerun()
+
+        history_df = st.session_state.player_count_history
+
+        if history_df.empty:
+            st.info(
+                "No data yet — click **Fetch Now** to collect the first snapshot, "
+                "then the app will collect one automatically each hour."
+            )
+        else:
+            import altair as alt
+
+            history_df = history_df.copy()
+            history_df["date"] = pd.to_datetime(history_df["date"])
+            last_snapshot = history_df["date"].max()
+            st.caption(f"Last snapshot: {last_snapshot.strftime('%Y-%m-%d %H:%M')}")
+
+            # Use tz-naive now() to match the tz-naive timestamps stored in the CSV
+            cutoff = pd.Timestamp.now() - pd.Timedelta(days=30)
+            recent = history_df[history_df["date"] >= cutoff].copy()
+
+            if recent.empty:
+                st.info("No snapshots in the last 30 days — click Fetch Now to start collecting data.")
+            else:
+                # Aggregate to one value per game per day (take the max snapshot of the day)
+                recent["date_str"] = recent["date"].dt.strftime("%Y-%m-%d")
+                daily = (
+                    recent.groupby(["date_str", "game_name"], as_index=False)["player_count"].max()
+                )
+                daily = daily.sort_values(["game_name", "date_str"])
+
+                # ── Game selector + scale toggle ──────────────────────────────
+                all_trend_games = sorted(daily["game_name"].unique().tolist())
+                # Default: top 10 by peak player count so the chart opens at a readable scale
+                _default_games = (
+                    daily.groupby("game_name")["player_count"]
+                    .max()
+                    .nlargest(10)
+                    .index.tolist()
+                )
+                sel_col, scale_col = st.columns([4, 1])
+                with sel_col:
+                    selected_trend_games = st.multiselect(
+                        "Games to display",
+                        options=all_trend_games,
+                        default=_default_games,
+                        placeholder="Select games…",
+                        key="trend_game_select",
+                    )
+                with scale_col:
+                    log_scale = st.checkbox("Log scale", value=False, key="trend_log_scale")
+
+                plot_daily = daily[daily["game_name"].isin(selected_trend_games)] if selected_trend_games else daily
+
+                n_games = plot_daily["game_name"].nunique()
+                n_days  = plot_daily["date_str"].nunique()
+                st.caption(f"**{n_games} games** · **{n_days} day{'s' if n_days != 1 else ''}** of data")
+
+                y_scale = alt.Scale(type="log") if log_scale else alt.Scale(type="linear", zero=False)
+
+                trend_chart = (
+                    alt.Chart(plot_daily)
+                    .mark_line(point=alt.OverlayMarkDef(filled=True, size=60))
+                    .encode(
+                        x=alt.X(
+                            "date_str:O",
+                            title="Date",
+                            sort="ascending",
+                            axis=alt.Axis(labelAngle=-40, labelOverlap="greedy"),
+                        ),
+                        y=alt.Y(
+                            "player_count:Q",
+                            title="Concurrent Players",
+                            scale=y_scale,
+                            axis=alt.Axis(format="~s"),
+                        ),
+                        color=alt.Color("game_name:N", title="Game"),
+                        tooltip=[
+                            alt.Tooltip("game_name:N",    title="Game"),
+                            alt.Tooltip("date_str:O",     title="Date"),
+                            alt.Tooltip("player_count:Q", title="Peak Players", format=","),
+                        ],
+                    )
+                    .properties(height=420)
+                    .interactive()
+                )
+                st.altair_chart(trend_chart, use_container_width=True)
+
+    # ── Peak Player Counts ─────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("📊 Peak Player Counts (SteamSpy)", expanded=False):
+        st.caption(
+            "All-time peak concurrent players and playtime from SteamSpy, for all games currently "
+            "shown in the filtered table. Results are cached for 24 hours."
+        )
+
+        if "player_count_df" not in st.session_state:
+            if STEAMSPY_CACHE_FILE.exists():
+                _sc = pd.read_csv(STEAMSPY_CACHE_FILE)
+                st.session_state.player_count_last_fetched = _sc["fetched_at"].iloc[0]
+                st.session_state.player_count_df = _sc.drop(columns=["fetched_at"])
+            else:
+                st.session_state.player_count_df = None
+                st.session_state.player_count_last_fetched = None
+        if "fetching_players" not in st.session_state:
+            st.session_state.fetching_players = False
+
+        fetch_col, info_col = st.columns([2, 5])
+        with fetch_col:
+            fetch_btn = st.button(
+                "🔄 Fetch Player Counts",
+                key="inv_fetch_players",
+                disabled=st.session_state.fetching_players,
+            )
+        with info_col:
+            if st.session_state.player_count_last_fetched:
+                st.caption(f"Last fetched: {st.session_state.player_count_last_fetched}")
+            else:
+                st.caption("Not yet fetched. Click the button to load data from SteamSpy.")
+
+        if fetch_btn:
+            st.session_state.fetching_players = True
+            game_names = filtered["Game Name"].dropna().unique().tolist()
+            progress_bar = st.progress(0, text="Starting…")
+
+            def _on_progress(i, total, name):
+                pct = int(i / total * 100) if total > 0 else 100
+                label = f"Fetching: {name}" if i < total else "Done"
+                progress_bar.progress(pct, text=label)
+
+            result_df = fetch_player_data(game_names, progress_callback=_on_progress)
+            st.session_state.player_count_last_fetched = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+            result_df["fetched_at"] = st.session_state.player_count_last_fetched
+            result_df.to_csv(STEAMSPY_CACHE_FILE, index=False)
+            st.session_state.player_count_df = result_df.drop(columns=["fetched_at"])
+            st.session_state.fetching_players = False
+            progress_bar.empty()
+            st.rerun()
+
+        if st.session_state.player_count_df is not None:
+            import altair as alt
+
+            pcdf = st.session_state.player_count_df
+
+            # ── Trend bar chart ───────────────────────────────────────────────
+            st.markdown("#### Current vs All-time Peak")
+
+            # Get most recent CCU per game from player trend history
+            _hist = st.session_state.player_count_history
+            if _hist.empty:
+                st.info(
+                    "No current player data yet — click **Fetch Now** in the Player Trend section "
+                    "above to collect a snapshot, then the bars will show trend colours."
+                )
+            else:
+                _hist = _hist.copy()
+                _hist["date"] = pd.to_datetime(_hist["date"])
+                latest_ccu = (
+                    _hist.sort_values("date")
+                    .groupby("game_name", as_index=False)
+                    .last()[["game_name", "player_count"]]
+                    .rename(columns={"game_name": "Game Name", "player_count": "Current CCU"})
+                )
+
+                plot_df = (
+                    pcdf[["Game Name", "Peak CCU", "Peak CCU Numeric", "Avg Playtime (2wk hrs)"]]
+                    [pcdf["Peak CCU Numeric"] > 0]
+                    .copy()
+                    .merge(latest_ccu, on="Game Name", how="left")
+                )
+
+                plot_df["pct_of_peak"] = (
+                    plot_df["Current CCU"] / plot_df["Peak CCU Numeric"] * 100
+                ).round(1)
+
+                def _trend(row):
+                    if pd.isna(row["Current CCU"]) or row["Peak CCU Numeric"] == 0:
+                        return "No data", "–", "#9E9E9E"
+                    if row["Current CCU"] >= row["Peak CCU Numeric"]:
+                        return "Rising", "▲", "#4CAF50"
+                    if row["Current CCU"] >= row["Peak CCU Numeric"] * 0.5:
+                        return "Flat", "→", "#2196F3"
+                    return "Declining", "▼", "#F44336"
+
+                plot_df[["trend_label", "symbol", "bar_color"]] = plot_df.apply(
+                    _trend, axis=1, result_type="expand"
+                )
+                plot_df["bar_label"] = plot_df.apply(
+                    lambda r: f"{r['symbol']} {r['pct_of_peak']:.0f}%" if pd.notna(r["pct_of_peak"]) else f"{r['symbol']} N/A",
+                    axis=1,
+                )
+                # Use current CCU for bar length; fall back to 0 for no-data rows
+                plot_df["bar_value"] = plot_df["Current CCU"].fillna(0)
+
+                if plot_df.empty:
+                    st.info("No CCU data available to chart — all games returned N/A.")
+                else:
+                    bars = (
+                        alt.Chart(plot_df)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X(
+                                "bar_value:Q",
+                                title="Current Concurrent Players",
+                                axis=alt.Axis(format=",d"),
+                            ),
+                            y=alt.Y(
+                                "Game Name:N",
+                                sort=alt.EncodingSortField(field="bar_value", order="descending"),
+                                title="",
+                            ),
+                            color=alt.Color("bar_color:N", scale=None, legend=None),
+                            tooltip=[
+                                alt.Tooltip("Game Name:N"),
+                                alt.Tooltip("bar_value:Q",              title="Current Players", format=","),
+                                alt.Tooltip("Peak CCU:N",               title="All-time Peak"),
+                                alt.Tooltip("Avg Playtime (2wk hrs):Q", title="Avg Playtime 2wk (hrs)"),
+                                alt.Tooltip("pct_of_peak:Q",            title="% of Peak", format=".1f"),
+                                alt.Tooltip("trend_label:N",            title="Trend"),
+                            ],
+                        )
+                    )
+                    labels = (
+                        alt.Chart(plot_df)
+                        .mark_text(align="left", dx=4, fontSize=12)
+                        .encode(
+                            x=alt.X("bar_value:Q"),
+                            y=alt.Y(
+                                "Game Name:N",
+                                sort=alt.EncodingSortField(field="bar_value", order="descending"),
+                            ),
+                            text=alt.Text("bar_label:N"),
+                            color=alt.Color("bar_color:N", scale=None),
+                        )
+                    )
+                    st.altair_chart(
+                        (bars + labels).properties(height=max(200, len(plot_df) * 32)),
+                        use_container_width=True,
+                    )
+                    st.caption(
+                        "🟢 **Rising ▲** — at or above all-time peak &nbsp;|&nbsp; "
+                        "🔵 **Flat →** — 50–99% of peak &nbsp;|&nbsp; "
+                        "🔴 **Declining ▼** — below 50% of peak &nbsp;|&nbsp; "
+                        "⚫ **–** — no current data (fetch Player Trend first)"
+                    )

@@ -1,25 +1,33 @@
+"""
+gaming_trends.py
+----------------
+Fetches Google Trends "interest over time" for gaming genres over the past 12 months.
+Results are normalized across batches using an anchor term so all genres are comparable.
+Output: gaming_genre_trends.csv
+"""
+
 import time
 import logging
 import pandas as pd
 from pytrends.request import TrendReq
 from pytrends.exceptions import TooManyRequestsError
-from config import GENRE_LIST
 
-GENRES = pd.read_excel(GENRE_LIST)["Genre"].tolist()
-    
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-def scrape_google_trends(keywords, timeframe='today 12-m'):
-    # Set up Pytrends connection
-    pytrends = TrendReq(hl='en-US', tz=360)
-
-    # Build payload with specified keywords and timeframe
-    pytrends.build_payload(keywords, cat=0, timeframe=timeframe) #, geo='', gprop=''
-
-    # Retrieve interest over time data
-    interest_over_time_df = pytrends.interest_over_time()
-
-    return interest_over_time_df
-
+GENRES = [
+    "action game",
+    "RPG game",
+    "strategy game",
+    "sports game",
+    "simulation game",
+    "horror game",
+    "puzzle game",
+    "fighting game",
+    "adventure game",
+    "shooter game",
+]
 
 # Anchor term: a stable, well-known keyword used in every batch so scores
 # can be rescaled to be comparable across batches.
@@ -59,44 +67,6 @@ def build_pytrends() -> TrendReq:
         retries=2,
         backoff_factor=0.5,
     )
-
-
-def resolve_game_topic(pytrends: TrendReq, game_name: str) -> str:
-    """
-    Call get_suggestions() and return the topic mid (/m/xxxxx) for the
-    first suggestion whose 'type' field contains the word 'game'.
-    Falls back to the literal game_name if nothing game-related is found.
-    """
-    try:
-        suggestions = pytrends.suggestions(keyword=game_name)
-        for s in suggestions:
-            if "game" in s.get("type", "").lower():
-                log.info("Resolved '%s' → topic '%s' (%s)", game_name, s["title"], s["mid"])
-                return s["mid"]
-        log.warning("No game-type suggestion for '%s', using literal keyword.", game_name)
-    except Exception as e:
-        log.warning("suggestions() failed for '%s': %s", game_name, e)
-    return game_name
-
-
-def fetch_game_trends(game_name: str) -> int:
-    """
-    Resolve a game title to its Google Trends topic ID, fetch 12-month
-    interest-over-time, and return the most recent weekly interest score (0-100).
-    Returns 0 on any failure.
-    """
-    pytrends = build_pytrends()
-    topic = resolve_game_topic(pytrends, game_name)
-    time.sleep(1)  # polite pause after suggestions call
-    try:
-        df = fetch_with_retry(pytrends, [topic])
-        if df.empty:
-            return 0
-        col = topic if topic in df.columns else df.columns[0]
-        return int(df[col].iloc[-1])
-    except Exception as e:
-        log.error("fetch_game_trends failed for '%s': %s", game_name, e)
-        return 0
 
 
 def fetch_with_retry(pytrends: TrendReq, keywords: list[str]) -> pd.DataFrame:
@@ -187,7 +157,12 @@ def fetch_batch(
     return result
 
 
-def google_trends() -> None:
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
     log.info("Starting Gaming Genre Trends scraper")
     log.info("Genres: %s", GENRES)
     log.info("Timeframe: %s | Geo: %s", TIMEFRAME, GEO or "Worldwide")
@@ -226,8 +201,8 @@ def google_trends() -> None:
     avg_row.index.name = "date"
 
     # Step 5: Write CSV
-    trend_data = pd.concat([avg_row, combined], axis=0)
-    trend_data.to_csv(OUTPUT_FILE)
+    output = pd.concat([combined, avg_row])
+    output.to_csv(OUTPUT_FILE)
     log.info("Data written to '%s'", OUTPUT_FILE)
 
     # Step 6: Print a quick summary
@@ -237,4 +212,6 @@ def google_trends() -> None:
         print(f"  {genre:<20} {score:>6.1f}")
     print(f"\nFull data saved to: {OUTPUT_FILE}")
 
-    return trend_data
+
+if __name__ == "__main__":
+    main()
