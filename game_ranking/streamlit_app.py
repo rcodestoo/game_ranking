@@ -13,6 +13,7 @@ import threading
 # writes its result here and the main thread reads it on the next rerun.
 _ns_thread_state = {"result": None, "running": False}
 _steam_thread_state = {"result": None, "running": False}
+_ns_verify_thread_state = {"running": False, "result": None, "total": 0, "done": 0}
 import datetime as dt
 import time
 from src.calculation.process_data import clean_dev_genre_list, flagging, calculate_developer_weighted_points, load_data, calculate_follower_weighted_points, calculate_developer_weighted_points, handle_change, populate_appids, calculate_google_trends_points
@@ -231,11 +232,11 @@ nonsteam_source_name = st.session_state.get("nonsteam_source", "default file")
 
 # ── Global date range (shared across all tabs) ────────────────────────────────
 def _min_date_from_series(series: pd.Series) -> dt.date:
-    parsed = pd.to_datetime(series, errors='coerce').dropna()
+    parsed = pd.to_datetime(series, errors='coerce', dayfirst=True).dropna()
     return parsed.min().date() if len(parsed) else dt.date(2000, 1, 1)
 
 def _max_date_from_series(series: pd.Series) -> dt.date:
-    parsed = pd.to_datetime(series, errors='coerce').dropna()
+    parsed = pd.to_datetime(series, errors='coerce', dayfirst=True).dropna()
     return parsed.max().date() if len(parsed) else dt.date.today()
 
 _steam_min = _min_date_from_series(df_steam.get('ReleaseDate',   pd.Series(dtype=str)))
@@ -252,6 +253,16 @@ _inv_max   = _max_date_from_series(
 )
 GLOBAL_DATE_MIN = min(_steam_min, _ns_min, _inv_min)
 GLOBAL_DATE_MAX = max(_steam_max, _ns_max, _inv_max)
+
+# ── Pre-render resets — must run before ANY widget is instantiated ────────────
+if st.session_state.get("steam_reset_filters") or \
+   st.session_state.get("ns_reset_filters") or \
+   st.session_state.get("inv_reset_filters"):
+    for _k in ("steam_start_date", "ns_start_date", "inv_start_date"):
+        st.session_state[_k] = GLOBAL_DATE_MIN
+    for _k in ("steam_end_date", "ns_end_date", "inv_end_date"):
+        st.session_state[_k] = GLOBAL_DATE_MAX
+    st.session_state["inv_status_quick_filter"] = None
 
 # Clamp any stale session-state date values so they stay within the computed range
 for _key in ("steam_start_date", "ns_start_date", "inv_start_date"):
@@ -423,16 +434,7 @@ with tab_steam:
         with f_col1:
             st.markdown("**Release Date**")
             if 'ReleaseDate' in df_ranked.columns:
-                df_ranked['ReleaseDate'] = pd.to_datetime(df_ranked['ReleaseDate'], errors='coerce')
-
-            # Use default values if reset flag is set
-            if st.session_state.steam_reset_filters:
-                st.session_state.steam_start_date = GLOBAL_DATE_MIN
-                st.session_state.steam_end_date   = GLOBAL_DATE_MAX
-                st.session_state.ns_start_date    = GLOBAL_DATE_MIN
-                st.session_state.ns_end_date      = GLOBAL_DATE_MAX
-                st.session_state.inv_start_date   = GLOBAL_DATE_MIN
-                st.session_state.inv_end_date     = GLOBAL_DATE_MAX
+                df_ranked['ReleaseDate'] = pd.to_datetime(df_ranked['ReleaseDate'], errors='coerce', dayfirst=True)
 
             start_date = st.date_input("From", value=st.session_state.get("steam_start_date", GLOBAL_DATE_MIN), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="steam_start_date", format="DD/MM/YYYY", on_change=_sync_from_steam_dates)
             end_date   = st.date_input("To",   value=st.session_state.get("steam_end_date",   GLOBAL_DATE_MAX), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="steam_end_date",   format="DD/MM/YYYY", on_change=_sync_from_steam_dates)
@@ -492,7 +494,7 @@ with tab_steam:
         # --- Follower Count cap ---
         with f_col6:
             st.markdown("**Max Follower Count**")
-            FOLLOWER_SLIDER_MAX = 100000
+            FOLLOWER_SLIDER_MAX = int(df_ranked['FollowerCount'].max()) if 'FollowerCount' in df_ranked.columns and not df_ranked['FollowerCount'].isna().all() else 500000
             default_fc_max = FOLLOWER_SLIDER_MAX if st.session_state.steam_reset_filters else st.session_state.get("steam_follower_max", FOLLOWER_SLIDER_MAX)
             follower_max = st.slider(
                 "Show games up to",
@@ -521,7 +523,7 @@ with tab_steam:
     if apply_steam:
         # Date
         if 'ReleaseDate' in df_filtered_steam.columns:
-            rd = pd.to_datetime(df_filtered_steam['ReleaseDate'], errors='coerce')
+            rd = pd.to_datetime(df_filtered_steam['ReleaseDate'], errors='coerce', dayfirst=True)
             df_filtered_steam = df_filtered_steam[rd.between(pd.Timestamp(start_date), pd.Timestamp(end_date))]
 
         # Genres
@@ -669,28 +671,44 @@ with tab_nonsteam:
                 st.error(f"❌ Scrape failed: {result['error']}")
                 _ns_thread_state["result"] = None
 
-    # ── Verify Steam Status (single game) ────────────────────────────────────
-    st.subheader("Verify Steam Status")
-    game_names = sorted(df_nonsteam["Game Title"].dropna().unique().tolist())
-    selected_game = st.selectbox("Select a game to verify", game_names, key="verify_game_select")
+    # ── Auto-verify games with unknown Steam status ───────────────────────────
+    _unverified_mask = df_nonsteam["SteamStatus"].fillna("Needs Verification") == "Needs Verification"
+    _unverified_count = int(_unverified_mask.sum())
 
-    if st.button("🔍 Verify", key="ns_verify_single"):
-        row_mask = df_nonsteam["Game Title"] == selected_game
-        platforms = str(df_nonsteam.loc[row_mask, "Platforms"].iloc[0]) if row_mask.any() else ""
-        status = verify_single_game_steam_status(selected_game, platforms)
-        # Update the CSV on disk (write to temp file first, then replace)
-        source = get_latest_nonsteam_csv()
-        try:
-            df_disk = pd.read_csv(source, encoding='utf-8-sig')
-            df_disk.loc[df_disk["Game Title"] == selected_game, "SteamStatus"] = status
-            tmp = source.with_suffix(".tmp")
-            df_disk.to_csv(tmp, index=False)
-            tmp.replace(source)
-            reload_nonsteam_from_csv()
-            st.success(f"**{selected_game}** → {status}")
-            st.rerun()
-        except PermissionError:
-            st.error("Cannot write to CSV — the file may be open in another program. Close it and try again.")
+    if _unverified_count > 0 and not _ns_verify_thread_state["running"]:
+        def _run_auto_verify(_state=_ns_verify_thread_state):
+            import time as _time
+            _source = get_latest_nonsteam_csv()
+            if not _source.exists():
+                _state["running"] = False
+                return
+            _df = pd.read_csv(_source, encoding='utf-8-sig')
+            _todo = _df[_df.get("SteamStatus", pd.Series(dtype=str)).fillna("Needs Verification") == "Needs Verification"]
+            _state["total"] = len(_todo)
+            _state["done"] = 0
+            for _i, (_idx, _row) in enumerate(_todo.iterrows()):
+                _name = str(_row.get("Game Title", "")).strip()
+                _plats = str(_row.get("Platforms", ""))
+                try:
+                    _status = verify_single_game_steam_status(_name, _plats)
+                except Exception:
+                    _status = "Console / Other"
+                _df.at[_idx, "SteamStatus"] = _status
+                _state["done"] = _i + 1
+                if (_i + 1) % 10 == 0 or (_i + 1) == _state["total"]:
+                    try:
+                        _tmp = _source.with_suffix(".tmp")
+                        _df.to_csv(_tmp, index=False, encoding='utf-8-sig')
+                        _tmp.replace(_source)
+                    except Exception:
+                        pass
+                _time.sleep(1.5)
+            _state["running"] = False
+            _state["result"] = "done"
+
+        _ns_verify_thread_state["running"] = True
+        _ns_verify_thread_state["result"] = None
+        threading.Thread(target=_run_auto_verify, daemon=True).start()
 
     st.divider()
 
@@ -704,7 +722,11 @@ with tab_nonsteam:
 
     # Pre-processing: label unchecked games, remove Steam games, parse dates
     df_nonsteam['SteamStatus'] = df_nonsteam['SteamStatus'].fillna('Needs Verification')
-    df_nonsteam_filter = df_nonsteam[df_nonsteam['SteamStatus'] != 'PC Game (on Steam)'].copy()
+    df_nonsteam_filter = df_nonsteam[
+        (df_nonsteam['SteamStatus'] != 'PC Game (on Steam)') &
+        (df_nonsteam['SteamStatus'] != 'Needs Verification') &
+        (df_nonsteam['Category'].str.strip().str.lower() == 'main game')
+    ].copy()
     df_nonsteam_filter['YouTube ReleaseDate'] = pd.to_datetime(
         df_nonsteam_filter['YouTube ReleaseDate'], errors='coerce'
     )
@@ -745,13 +767,14 @@ with tab_nonsteam:
 
     df_non_steam_ranked = df_nonsteam_filter.sort_values('combined_score', ascending=False, ignore_index=True)
 
-    # ── Cross-check against Steam titles ──────────────────────────────────────
+    # ── Cross-check against Steam titles — always filter out games on Steam ──────
     steam_titles = set(
         df_steam['Name'].dropna().astype(str).str.strip().str.lower()
     ) if 'Name' in df_steam.columns else set()
     df_non_steam_ranked['_on_steam'] = (
         df_non_steam_ranked['Game Title'].astype(str).str.strip().str.lower().isin(steam_titles)
     )
+    df_non_steam_ranked = df_non_steam_ranked[~df_non_steam_ranked['_on_steam']].reset_index(drop=True)
 
     # ── Fetch Trends button ───────────────────────────────────────────────────
     if st.button("📊 Fetch Trends", key="fetch_nonsteam_trends",
@@ -784,14 +807,6 @@ with tab_nonsteam:
         #--- YouTube Release Date ---
         with nf_col1:
             st.markdown("**YouTube Release Date**")
-            if st.session_state.ns_reset_filters:
-                st.session_state.steam_start_date = GLOBAL_DATE_MIN
-                st.session_state.steam_end_date   = GLOBAL_DATE_MAX
-                st.session_state.ns_start_date    = GLOBAL_DATE_MIN
-                st.session_state.ns_end_date      = GLOBAL_DATE_MAX
-                st.session_state.inv_start_date   = GLOBAL_DATE_MIN
-                st.session_state.inv_end_date     = GLOBAL_DATE_MAX
-
             ns_start = st.date_input("From", value=st.session_state.get("ns_start_date", GLOBAL_DATE_MIN), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="ns_start_date", format="DD/MM/YYYY", on_change=_sync_from_ns_dates)
             ns_end   = st.date_input("To",   value=st.session_state.get("ns_end_date",   GLOBAL_DATE_MAX), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="ns_end_date",   format="DD/MM/YYYY", on_change=_sync_from_ns_dates)
 
@@ -815,7 +830,7 @@ with tab_nonsteam:
                 placeholder="All platforms", key="ns_platforms"
             )
 
-        nf_col3, nf_col4 = st.columns(2)
+        nf_col3, _ = st.columns(2)
 
         # --- SteamStatus filter ---
         with nf_col3:
@@ -830,17 +845,6 @@ with tab_nonsteam:
                 "Select status", options=steam_statuses,
                 default=default_statuses,
                 placeholder="All statuses", key="ns_steam_status"
-            )
-
-        # --- Hide on Steam filter ---
-        with nf_col4:
-            st.markdown("**Steam Overlap**")
-            n_on_steam = int(df_non_steam_ranked['_on_steam'].sum())
-            default_hide_steam = True if st.session_state.ns_reset_filters else st.session_state.get("ns_hide_on_steam", True)
-            hide_on_steam = st.checkbox(
-                f"Hide games already on Steam ({n_on_steam} found)",
-                value=default_hide_steam,
-                key="ns_hide_on_steam",
             )
 
         # Apply and Revert buttons
@@ -877,16 +881,14 @@ with tab_nonsteam:
         if selected_statuses and 'SteamStatus' in df_filtered_ns.columns:
             df_filtered_ns = df_filtered_ns[df_filtered_ns['SteamStatus'].isin(selected_statuses)]
 
-        # Hide games already on Steam
-        if hide_on_steam:
-            df_filtered_ns = df_filtered_ns[~df_filtered_ns['_on_steam']]
-
     df_filtered_ns = df_filtered_ns.reset_index(drop=True)
     df_filtered_ns.index = df_filtered_ns.index + 1
 
     # ── Results ───────────────────────────────────────────────────────────────
     st.subheader("Top Priority Non-Steam Games")
     st.caption(f"Showing **{len(df_filtered_ns)}** of **{len(df_non_steam_ranked)}** games")
+    if _unverified_count > 0:
+        st.info(f"⏳ **{_unverified_count} game(s) pending Steam verification** — they will appear here once checked.")
 
     cols_to_show = [
         'Game Title', 'combined_score', 'trends_score', 'adjusted_views',
@@ -911,13 +913,22 @@ with tab_nonsteam:
         if col in df_nonsteam_display.columns:
             df_nonsteam_display[col] = pd.to_numeric(df_nonsteam_display[col], errors='coerce').round(2)
 
+    for col in ['Release Date', 'YouTube ReleaseDate']:
+        if col in df_nonsteam_display.columns:
+            df_nonsteam_display[col] = pd.to_datetime(df_nonsteam_display[col], errors='coerce').dt.strftime('%d/%m/%Y').fillna('')
+
+    if 'S.No.' not in df_nonsteam_display.columns:
+        df_nonsteam_display.insert(0, 'S.No.', range(1, len(df_nonsteam_display) + 1))
+
     # Include date_appended for highlighting (if present in source data)
     if "date_appended" in df_filtered_ns.columns and "date_appended" not in cols_to_show:
         df_nonsteam_display["date_appended"] = df_filtered_ns["date_appended"].values
 
-    st.dataframe(
+    _ns_table_selection = st.dataframe(
         highlight_new_rows(df_nonsteam_display),
         use_container_width=True,
+        selection_mode="multi-row",
+        on_select="rerun",
         column_config={
             "combined_score":     st.column_config.NumberColumn(format="%.2f"),
             "trends_score":       st.column_config.NumberColumn(format="%d"),
@@ -926,6 +937,67 @@ with tab_nonsteam:
             "Days_Since_Release": st.column_config.NumberColumn(format="%d"),
         },
     )
+
+    # ── Verify Steam Status ───────────────────────────────────────────────────
+    _selected_row_indices = _ns_table_selection.selection.rows if _ns_table_selection.selection else []
+    _selected_titles = (
+        df_nonsteam_display.iloc[_selected_row_indices]["Game Title"].tolist()
+        if _selected_row_indices and "Game Title" in df_nonsteam_display.columns else []
+    )
+    _has_selection = len(_selected_titles) > 0
+
+    _vcol1, _vcol2 = st.columns([2, 5])
+    with _vcol1:
+        if st.button("🔍 Verify Steam Status", key="ns_verify_selected", disabled=not _has_selection or _ns_verify_thread_state["running"]):
+            _source = get_latest_nonsteam_csv()
+            try:
+                _df_disk = pd.read_csv(_source, encoding='utf-8-sig')
+                _verify_results = {}
+                with st.spinner(f"Verifying {len(_selected_titles)} game(s)..."):
+                    for _title in _selected_titles:
+                        _row_mask = _df_disk["Game Title"] == _title
+                        _plats = str(_df_disk.loc[_row_mask, "Platforms"].iloc[0]) if _row_mask.any() else ""
+                        try:
+                            _status = verify_single_game_steam_status(_title, _plats)
+                        except Exception:
+                            _status = "Console / Other"
+                        _df_disk.loc[_row_mask, "SteamStatus"] = _status
+                        _verify_results[_title] = _status
+                _tmp = _source.with_suffix(".tmp")
+                _df_disk.to_csv(_tmp, index=False, encoding='utf-8-sig')
+                _tmp.replace(_source)
+                reload_nonsteam_from_csv()
+                st.session_state["ns_verify_messages"] = _verify_results
+                st.rerun()
+            except PermissionError:
+                st.error("Cannot write to CSV — the file may be open in another program.")
+    with _vcol2:
+        if not _has_selection:
+            st.caption("Select rows in the table above to verify their Steam status.")
+        else:
+            st.caption(f"{len(_selected_titles)} game(s) selected: {', '.join(_selected_titles)}")
+
+    if "ns_verify_messages" in st.session_state:
+        for _title, _status in st.session_state.pop("ns_verify_messages").items():
+            if _status == "PC Game (on Steam)":
+                st.warning(f"**{_title}** is on Steam and will be removed from the list.")
+            else:
+                st.success(f"**{_title}** is not on Steam.")
+
+    # ── Auto-verify progress (shown below the verify button) ─────────────────
+    if _ns_verify_thread_state["running"]:
+        _done = _ns_verify_thread_state["done"]
+        _total = _ns_verify_thread_state["total"]
+        st.info(f"🔄 Auto-verifying Steam status in background: {_done}/{_total} games checked...")
+        st.button("🔃 Check progress", key="ns_verify_progress_check")
+
+    _verify_result = _ns_verify_thread_state["result"]
+    if _verify_result == "done":
+        _ns_verify_thread_state["result"] = None
+        reload_nonsteam_from_csv()
+        df_nonsteam = st.session_state.df_nonsteam.copy()
+        st.toast("Steam status verification complete!", icon="✅")
+        st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -951,14 +1023,6 @@ with tab_inventory:
             st.markdown("**Date Purchased**")
             gd = st.session_state.game_data.copy()
             gd['Date Purchased'] = pd.to_datetime(gd['Date Purchased'], errors='coerce', format='%Y-%m-%d')
-
-            if st.session_state.inv_reset_filters:
-                st.session_state.steam_start_date = GLOBAL_DATE_MIN
-                st.session_state.steam_end_date   = GLOBAL_DATE_MAX
-                st.session_state.ns_start_date    = GLOBAL_DATE_MIN
-                st.session_state.ns_end_date      = GLOBAL_DATE_MAX
-                st.session_state.inv_start_date   = GLOBAL_DATE_MIN
-                st.session_state.inv_end_date     = GLOBAL_DATE_MAX
 
             inv_start = st.date_input("From", value=st.session_state.get("inv_start_date", GLOBAL_DATE_MIN), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="inv_start_date", format="DD/MM/YYYY", on_change=_sync_from_inv_dates)
             inv_end   = st.date_input("To",   value=st.session_state.get("inv_end_date",   GLOBAL_DATE_MAX), min_value=GLOBAL_DATE_MIN, max_value=GLOBAL_DATE_MAX, key="inv_end_date",   format="DD/MM/YYYY", on_change=_sync_from_inv_dates)
@@ -989,25 +1053,6 @@ with tab_inventory:
                 key="inv_name_search"
             )
 
-        inv_f4, inv_f5, inv_f6, inv_f7 = st.columns(4)
-
-        # --- Status checkboxes ---
-        with inv_f4:
-            st.markdown("**Active**")
-            default_active = "All" if st.session_state.inv_reset_filters else st.session_state.get("inv_active", "All")
-            inv_active = st.selectbox("Active", ["All", "Yes", "No"], index=["All", "Yes", "No"].index(default_active), key="inv_active")
-        with inv_f5:
-            st.markdown("**On Hold**")
-            default_hold = "All" if st.session_state.inv_reset_filters else st.session_state.get("inv_on_hold", "All")
-            inv_on_hold = st.selectbox("On Hold", ["All", "Yes", "No"], index=["All", "Yes", "No"].index(default_hold), key="inv_on_hold")
-        with inv_f6:
-            st.markdown("**Reviewed**")
-            default_reviewed = "All" if st.session_state.inv_reset_filters else st.session_state.get("inv_reviewed", "All")
-            inv_reviewed = st.selectbox("Reviewed", ["All", "Yes", "No"], index=["All", "Yes", "No"].index(default_reviewed), key="inv_reviewed")
-        with inv_f7:
-            st.markdown("**Inactive**")
-            default_inactive = "All" if st.session_state.inv_reset_filters else st.session_state.get("inv_inactive", "All")
-            inv_inactive = st.selectbox("Inactive", ["All", "Yes", "No"], index=["All", "Yes", "No"].index(default_inactive), key="inv_inactive")
 
         # Apply and Revert buttons for inventory
         inv_filter_col1, inv_filter_col2 = st.columns(2)
@@ -1021,6 +1066,24 @@ with tab_inventory:
     # Reset the flag after using it
     if st.session_state.inv_reset_filters:
         st.session_state.inv_reset_filters = False
+        st.session_state.inv_status_quick_filter = None
+
+    # ── Status quick-filter buttons ───────────────────────────────────────────
+    if "inv_status_quick_filter" not in st.session_state:
+        st.session_state.inv_status_quick_filter = None
+
+    _qf_cols = st.columns(5)
+    for _col, (_label, _val) in zip(_qf_cols, [
+        ("All", None), ("Active", "Active"), ("On Hold", "On Hold"),
+        ("Reviewed", "Reviewed"), ("Inactive", "Inactive")
+    ]):
+        with _col:
+            _is_selected = st.session_state.inv_status_quick_filter == _val
+            if st.button(_label, key=f"inv_qf_{_label}",
+                         type="primary" if _is_selected else "secondary",
+                         use_container_width=True):
+                st.session_state.inv_status_quick_filter = _val
+                st.rerun()
 
     # ── Apply filters ─────────────────────────────────────────────────────────
     filtered = st.session_state.game_data.copy()
@@ -1040,16 +1103,14 @@ with tab_inventory:
                 filtered['Game Name'].str.contains(inv_name_search, case=False, na=False)
             ]
 
-        # Boolean status filters
-        bool_map = {"Yes": True, "No": False}
-        for col, sel in [('Active', inv_active), ('On Hold', inv_on_hold),
-                         ('Reviewed', inv_reviewed), ('Inactive', inv_inactive)]:
-            if sel != "All" and col in filtered.columns:
-                try:
-                    filtered[col] = filtered[col].astype(bool)
-                    filtered = filtered[filtered[col] == bool_map[sel]]
-                except Exception:
-                    pass
+    # Always apply status quick filter
+    _qf = st.session_state.inv_status_quick_filter
+    if _qf is not None and _qf in filtered.columns:
+        try:
+            filtered[_qf] = filtered[_qf].astype(bool)
+            filtered = filtered[filtered[_qf] == True]
+        except Exception:
+            pass
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     st.divider()
@@ -1094,7 +1155,12 @@ with tab_inventory:
                     )
                 st.session_state.inv_edit_data = snap
                 st.rerun()
-        st.dataframe(filtered, use_container_width=True)
+        _filtered_display = filtered.copy()
+        if 'Date Purchased' in _filtered_display.columns:
+            _filtered_display['Date Purchased'] = _filtered_display['Date Purchased'].dt.strftime('%d/%m/%Y').where(
+                _filtered_display['Date Purchased'].notna(), other=''
+            )
+        st.dataframe(_filtered_display, use_container_width=True)
     else:
         with btn_col:
             if st.button("✅ Done", key="inv_done_btn"):
@@ -1170,13 +1236,14 @@ with tab_inventory:
 
                 # ── Game selector + scale toggle ──────────────────────────────
                 all_trend_games = sorted(daily["game_name"].unique().tolist())
-                # Default: top 10 by peak player count so the chart opens at a readable scale
-                _default_games = (
-                    daily.groupby("game_name")["player_count"]
-                    .max()
-                    .nlargest(10)
-                    .index.tolist()
-                )
+                # Default: games currently visible in the filtered table
+                _filtered_names = set(filtered['Game Name'].dropna().astype(str).tolist()) if 'Game Name' in filtered.columns else set()
+                _default_games = [g for g in all_trend_games if g in _filtered_names]
+                if not _default_games:
+                    _default_games = (
+                        daily.groupby("game_name")["player_count"]
+                        .max().nlargest(10).index.tolist()
+                    )
                 sel_col, scale_col = st.columns([4, 1])
                 with sel_col:
                     selected_trend_games = st.multiselect(

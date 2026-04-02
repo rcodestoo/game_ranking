@@ -2,14 +2,13 @@ import streamlit as st
 import pandas as pd
 import math
 import requests
-from config import CSV_STEAM, CSV_NON_STEAM, DEV_LIST, GENRE_LIST, INVENTORY_FILE
+from config import DEV_LIST, GENRE_LIST, INVENTORY_FILE
 from src.calculation.scraper import scrape_google_trends, fetch_game_trends
 
 #LOAD DEVELOPER AND GENRE LIST
 developer_list = pd.read_excel(DEV_LIST)
 genre_list = pd.read_excel(GENRE_LIST)
 inventory = pd.read_csv(INVENTORY_FILE, index_col=0)
-steam_list = pd.read_csv(CSV_STEAM)
 
 #FUNCTION TO LOAD DATA
 @st.cache_data
