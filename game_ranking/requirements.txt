@@ -3,3 +3,4 @@ pandas
 openpyxl
 altair<5
 pytrends<4.9.2
+urllib3<2
