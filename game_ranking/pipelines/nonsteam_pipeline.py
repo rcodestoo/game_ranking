@@ -2,7 +2,7 @@
 Non-Steam Pipeline
 ==================
 Runs the non-steam script.py scraper headlessly (no input() prompts),
-then appends newly scraped games to default_files/raw_non_steam.csv.
+then appends newly scraped games to raw/raw_non_steam_YYYY-MM-DD.csv.
 
 Three stages:
   1. collect_followers()           — scrapes Steam community groups for follower counts
@@ -26,8 +26,8 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from config import RAW_DIR, get_latest_nonsteam_csv
-from pipeline.state import get_next_window, mark_run_complete
+from config import RAW_DIR, CACHE_DIR, get_latest_nonsteam_csv
+from pipelines.state import get_next_window, mark_run_complete
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +40,9 @@ FOLLOWER_JSON_DEFAULT     = _SCRAPER_REPO / "follower_counts_output.json"
 IGDB_DETAILS_JSON_DEFAULT = _SCRAPER_REPO / "igdb_game_details.json"
 COMBINED_JSON_DEFAULT     = _SCRAPER_REPO / "data_full_combined.json"
 
-# Output CSV lives in the AGS project
-_AGS_ROOT        = Path(__file__).resolve().parent.parent
-RAW_NONSTEAM_CSV = _AGS_ROOT / "default_files" / "raw_non_steam.csv"
-TEMP_EXPORT_CSV  = Path("C:/Users/Rasika/Desktop/AGS/repos/game_ranking/default_files/_nonsteam_temp_export.csv")
-MAX_GAMES_DEFAULT     = 100  # Stage 1 cap — avoids very long runs
-MIN_FOLLOWERS_DEFAULT = 0    # export all games; Streamlit filters later
+TEMP_EXPORT_CSV  = CACHE_DIR / "_nonsteam_temp_export.csv"
+MAX_GAMES_DEFAULT     = 100
+MIN_FOLLOWERS_DEFAULT = 0
 
 
 # ── Module loader ──────────────────────────────────────────────────────────────
@@ -81,19 +78,14 @@ def _make_fake_input(answers: dict):
 def _patch_module_input(module, answers: dict):
     """
     Patch input() both on the module's __builtins__ AND on the real builtins module.
-    The module-level patch handles calls resolved via the module namespace;
-    the builtins-level patch handles calls in functions that resolve input() directly
-    from the built-in scope (e.g. export_to_csv in script.py).
     The builtins patch is stored so it can be restored after the pipeline run.
     """
     fake = _make_fake_input(answers)
 
-    # Patch the module's own builtins dict
     builtins_dict = {k: getattr(builtins, k) for k in dir(builtins) if not k.startswith("_")}
     builtins_dict["input"] = fake
     module.__builtins__ = builtins_dict
 
-    # Also patch the real builtins module so ALL code in the process sees the fake
     builtins.input = fake
 
 
@@ -121,20 +113,15 @@ class _StreamCapture:
 # ── Main pipeline entry point ─────────────────────────────────────────────────
 
 def run_nonsteam_scraper(
-    # File paths (all optional — fall back to defaults above)
     script_path: str = None,
     games_json: str = None,
     follower_json: str = None,
     igdb_details_json: str = None,
     combined_json: str = None,
-    # Stage 1 config
     max_games: int = None,
-    # Stage 3 config
     min_followers: int = None,
-    # Date window (optional override)
     start_date: str = None,
     end_date: str = None,
-    # Streamlit callback
     status_callback=None,
 ) -> dict:
     """
@@ -148,7 +135,6 @@ def run_nonsteam_scraper(
         if status_callback:
             status_callback(msg)
 
-    # ── Resolve paths and settings ─────────────────────────────────────────────
     script_path       = Path(script_path)       if script_path       else SCRIPT_PATH_DEFAULT
     games_json        = Path(games_json)        if games_json        else GAMES_JSON_DEFAULT
     follower_json     = Path(follower_json)     if follower_json     else FOLLOWER_JSON_DEFAULT
@@ -157,27 +143,22 @@ def run_nonsteam_scraper(
     max_games         = max_games     if max_games     is not None else MAX_GAMES_DEFAULT
     min_followers     = min_followers if min_followers is not None else MIN_FOLLOWERS_DEFAULT
 
-    # ── Date window ────────────────────────────────────────────────────────────
     if start_date is None or end_date is None:
         start_date, end_date = get_next_window("non_steam", window_days=14)
     log(f"Scrape window: {start_date} -> {end_date}")
 
-    # ── Preflight ──────────────────────────────────────────────────────────────
     if not games_json.exists():
         msg = f"games.json not found at: {games_json}"
         log(f"ERROR: {msg}")
         return {"success": False, "new_rows": 0, "window_start": start_date,
                 "window_end": end_date, "error": msg}
 
-    # Save the real input() so we can restore it after the pipeline
     _real_input = builtins.input
 
     try:
         log("Loading scraper module...")
         script = _load_script_module(script_path)
 
-        # Patch away all interactive input() calls — both on the module and globally,
-        # because export_to_csv resolves input() from the built-in scope directly.
         _patch_module_input(script, {
             "minimum number of followers": str(min_followers),
             "export this monthly report":  "n",
@@ -189,12 +170,9 @@ def run_nonsteam_scraper(
 
         capture = _StreamCapture(log)
 
-        # ══════════════════════════════════════════════════════════════════════
         # STAGE 1 — Collect Steam follower counts
-        # ══════════════════════════════════════════════════════════════════════
         log(f"Stage 1/3: Collecting follower counts "
             f"(processing up to {max_games if max_games else 'all'} games)...")
-
         old_stdout = sys.stdout
         sys.stdout = capture
         try:
@@ -207,11 +185,8 @@ def run_nonsteam_scraper(
             sys.stdout = old_stdout
         log("Stage 1 complete.")
 
-        # ══════════════════════════════════════════════════════════════════════
         # STAGE 2 — Fetch IGDB genres/themes/keywords + YouTube stats
-        # ══════════════════════════════════════════════════════════════════════
         log("Stage 2/3: Fetching IGDB + YouTube data (skips already-fetched games)...")
-
         old_stdout = sys.stdout
         sys.stdout = capture
         try:
@@ -223,11 +198,8 @@ def run_nonsteam_scraper(
             sys.stdout = old_stdout
         log("Stage 2 complete.")
 
-        # ══════════════════════════════════════════════════════════════════════
         # STAGE 3 — Export combined data to CSV
-        # ══════════════════════════════════════════════════════════════════════
         log("Stage 3/3: Exporting combined data to CSV...")
-
         old_stdout = sys.stdout
         sys.stdout = capture
         try:
@@ -247,7 +219,6 @@ def run_nonsteam_scraper(
                     "window_end": end_date, "error": "export_to_csv returned False"}
         log("Stage 3 complete.")
 
-        # ── Append to master CSV ───────────────────────────────────────────────
         new_rows = _append_to_raw_nonsteam(log)
         TEMP_EXPORT_CSV.unlink(missing_ok=True)
 
@@ -264,13 +235,11 @@ def run_nonsteam_scraper(
                 "window_end": end_date, "error": str(e)}
 
     finally:
-        # Always restore the real input() regardless of success or failure
         builtins.input = _real_input
 
 
 # ── Canonical column schema ────────────────────────────────────────────────────
 
-# Authoritative column order for all non-steam CSV files.
 NONSTEAM_COLUMNS = [
     "Game Title",
     "Category",
@@ -289,24 +258,18 @@ NONSTEAM_COLUMNS = [
     "date_appended",
 ]
 
-# Known scraper column aliases → canonical names
-# Covers both the camelCase names from export_to_csv and any lowercase variants
 _NONSTEAM_RENAME = {
-    # Game title
     "Name":                "Game Title",
     "name":                "Game Title",
     "game_title":          "Game Title",
-    # Release date
     "ReleaseDate":         "Release Date",
     "release_date":        "Release Date",
-    # Developers / publishers / platforms (lowercase only; Title-case already matches)
     "developers":          "Developers",
     "publishers":          "Publishers",
     "platforms":           "Platforms",
     "genres":              "Genres",
     "themes":              "Themes",
     "keywords":            "Keywords",
-    # YouTube fields — scraper uses camelCase
     "YoutubeURL":          "YouTube URL",
     "youtube_url":         "YouTube URL",
     "YoutubeViewCount":    "YouTube Views",
@@ -315,10 +278,8 @@ _NONSTEAM_RENAME = {
     "youtube_likes":       "YouTube Likes",
     "YoutubeReleaseDate":  "YouTube ReleaseDate",
     "youtube_releasedate": "YouTube ReleaseDate",
-    # Steam status
     "steam_status":        "SteamStatus",
 }
-
 
 _STEAM_API        = "https://store.steampowered.com/api/appdetails"
 _STEAM_SEARCH_API = "https://store.steampowered.com/api/storesearch/"
@@ -326,7 +287,6 @@ _PC_PLATFORM_KEYWORDS = ("pc (microsoft windows)", "windows")
 
 
 def _extract_platforms_from_release_info(release_info_val) -> str:
-    """Parse ReleaseInfo dict string → comma-joined set of all platform names."""
     try:
         info = ast.literal_eval(str(release_info_val))
         plats = list(info.get("original_platforms", []))
@@ -338,12 +298,6 @@ def _extract_platforms_from_release_info(release_info_val) -> str:
 
 
 def _detect_steam_status(app_id, platforms_str: str = "") -> str:
-    """
-    Check the Steam store API for app_id.
-    - Returns 'PC Game (on Steam)' if found on Steam store.
-    - Returns 'Non-Steam PC Game' if not on Steam but platforms include a PC platform.
-    - Returns 'Console / Other' otherwise.
-    """
     try:
         resp = requests.get(
             _STEAM_API,
@@ -361,7 +315,6 @@ def _detect_steam_status(app_id, platforms_str: str = "") -> str:
 
 
 def _search_steam_app_id(name: str):
-    """Search Steam store by name. Returns AppId if exact match found (case-insensitive), else None."""
     try:
         resp = requests.get(
             _STEAM_SEARCH_API,
@@ -378,11 +331,6 @@ def _search_steam_app_id(name: str):
 
 
 def _fill_steam_status(df: pd.DataFrame, log=None) -> pd.DataFrame:
-    """
-    For all rows with an AppId in the raw temp CSV (before normalization drops AppId),
-    check the Steam store API and set SteamStatus. Re-checks every row.
-    Uses ReleaseInfo to distinguish 'Non-Steam PC Game' vs 'Console / Other'.
-    """
     if "AppId" not in df.columns:
         return df
 
@@ -404,7 +352,6 @@ def _fill_steam_status(df: pd.DataFrame, log=None) -> pd.DataFrame:
             status = "Console / Other"
         time.sleep(0.5)
 
-        # Fallback: if not found by AppId, try name-based search
         if status != "PC Game (on Steam)":
             name = str(row.get("Name", "")).strip()
             try:
@@ -440,8 +387,6 @@ def verify_single_game_steam_status(game_title: str, platforms_str: str = "") ->
 def backfill_steam_status(log=None) -> int:
     """
     Re-check every game in the latest non-steam CSV against the Steam store.
-    Uses name-based exact search to find AppId, then appdetails to confirm.
-    Uses the Platforms column to distinguish 'Non-Steam PC Game' vs 'Console / Other'.
     Writes results back to the same CSV file. Returns number of rows processed.
     """
     source_path = get_latest_nonsteam_csv()
@@ -474,7 +419,6 @@ def backfill_steam_status(log=None) -> int:
         if app_id is not None:
             status = _detect_steam_status(app_id, platforms_str)
         else:
-            # No Steam search match — use platforms only
             plats_lower = platforms_str.lower()
             if any(kw in plats_lower for kw in _PC_PLATFORM_KEYWORDS):
                 status = "Non-Steam PC Game"
@@ -506,8 +450,7 @@ def _normalize_nonsteam_df(df: pd.DataFrame) -> pd.DataFrame:
 def _normalize_release_date(series: pd.Series) -> pd.Series:
     """
     Convert Release Date values to ISO format (YYYY-MM-DD) where parseable.
-    Non-date strings like 'Coming Soon' or 'TBD' are kept as-is so the UI
-    can display why the date is missing.
+    Non-date strings like 'Coming Soon' or 'TBD' are kept as-is.
     """
     def _parse(val):
         if pd.isna(val) or str(val).strip() == "":
@@ -516,11 +459,9 @@ def _normalize_release_date(series: pd.Series) -> pd.Series:
         try:
             return pd.to_datetime(s, dayfirst=False).strftime("%Y-%m-%d")
         except Exception:
-            return s  # preserve 'Coming Soon', 'TBD', 'Q4 2026', etc.
+            return s
     return series.apply(_parse)
 
-
-# ── CSV append helper ──────────────────────────────────────────────────────────
 
 def _append_to_raw_nonsteam(log) -> int:
     """
@@ -528,8 +469,6 @@ def _append_to_raw_nonsteam(log) -> int:
     timestamped raw_non_steam_YYYY-MM-DD.csv. Returns number of new rows added.
     """
     try:
-        # The scraper writes with encoding='utf-8-sig'; match it here to avoid
-        # Windows cp1252 misreads that corrupt multibyte game names and shift columns.
         new_df = pd.read_csv(TEMP_EXPORT_CSV, encoding="utf-8-sig")
     except Exception as e:
         log(f"Could not read temp export: {e}")
@@ -539,17 +478,12 @@ def _append_to_raw_nonsteam(log) -> int:
         log("Temp export was empty -- no games found")
         return 0
 
-    # Detect SteamStatus via Steam API before AppId is dropped by normalization
     new_df = _fill_steam_status(new_df, log)
 
-    # Normalise to canonical column names before any further processing
-    new_df["date_appended"] = None  # placeholder; stamped only on truly new rows below
+    new_df["date_appended"] = None
     new_df = _normalize_nonsteam_df(new_df)
-
-    # Fix 1: normalise Release Date to ISO format; keep non-date strings as-is
     new_df["Release Date"] = _normalize_release_date(new_df["Release Date"])
 
-    # Fix 2: mark rows with no YouTube video found
     no_video = (
         new_df["YouTube URL"].isna() |
         (new_df["YouTube URL"].astype(str).str.strip() == "")
@@ -574,7 +508,6 @@ def _append_to_raw_nonsteam(log) -> int:
             log("No new unique games -- CSV already up to date")
             return 0
 
-        # Stamp only the newly appended rows
         new_only["date_appended"] = date.today().isoformat()
 
         combined = pd.concat([existing_df, new_only], ignore_index=True)
@@ -595,7 +528,6 @@ def append_from_uploaded_nonsteam_csv(uploaded_df: pd.DataFrame) -> tuple:
     Merge an externally uploaded non-steam DataFrame into the persistent CSV.
     - Rows whose Game Title already exists are OVERWRITTEN.
     - New rows are APPENDED.
-    - ALL uploaded rows get date_appended = today.
     Returns (n_updated, n_new).
     """
     today = date.today().isoformat()

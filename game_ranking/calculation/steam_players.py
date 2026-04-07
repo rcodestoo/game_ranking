@@ -6,12 +6,12 @@ Two data-fetch modes:
 1. Peak CCU via SteamSpy (fetch_player_data)
    Fetches peak concurrent player counts for a list of game names.
    App IDs are resolved via Steam Store search and cached locally.
-   Cache: game_ranking/default_files/steam_appid_cache.json
+   Cache: game_ranking/cache/steam_appid_cache.json
 
 2. Daily concurrent player snapshots (fetch_player_counts_if_needed)
-   Calls the Steam ISteamUserStats API once per day for Inactive/On-Hold
-   Steam games in the inventory and appends results to a history CSV.
-   History: game_ranking/src/data/player_counts_history.csv
+   Calls the Steam ISteamUserStats API once per day for Steam games
+   in the inventory and appends results to a history CSV.
+   History: game_ranking/cache/player_counts_history.csv
 """
 
 import time
@@ -20,11 +20,10 @@ import difflib
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-from pathlib import Path
+from config import CACHE_DIR
 
-# ── Config ─────────────────────────────────────────────────────────────────────
-CACHE_FILE    = Path(__file__).resolve().parents[2] / "default_files" / "steam_appid_cache.json"
-HISTORY_FILE  = Path(__file__).resolve().parents[1] / "data" / "player_counts_history.csv"
+CACHE_FILE    = CACHE_DIR / "steam_appid_cache.json"
+HISTORY_FILE  = CACHE_DIR / "player_counts_history.csv"
 CCU_TTL_HOURS = 24
 MIN_STEAMSPY_INTERVAL  = 0.25   # seconds between SteamSpy requests (≤4 req/s)
 MIN_STORE_INTERVAL     = 0.5    # seconds between Steam Store search requests
@@ -33,8 +32,6 @@ HISTORY_COLUMNS        = ["date", "game_name", "steam_appid", "player_count"]
 
 _last_request_time: float = 0.0
 
-
-# ── Cache helpers ──────────────────────────────────────────────────────────────
 
 def _load_cache() -> dict:
     if CACHE_FILE.exists():
@@ -50,8 +47,6 @@ def _save_cache(cache: dict) -> None:
     CACHE_FILE.write_text(json.dumps(cache, indent=2), encoding="utf-8")
 
 
-# ── Rate limiting ──────────────────────────────────────────────────────────────
-
 def _throttle(interval: float) -> None:
     global _last_request_time
     elapsed = time.time() - _last_request_time
@@ -59,8 +54,6 @@ def _throttle(interval: float) -> None:
         time.sleep(interval - elapsed)
     _last_request_time = time.time()
 
-
-# ── Steam Store name → App ID lookup ──────────────────────────────────────────
 
 def search_steam_appid(game_name: str, cache: dict) -> int | None:
     """
@@ -70,7 +63,7 @@ def search_steam_appid(game_name: str, cache: dict) -> int | None:
     """
     entry = cache.get(game_name, {})
     if "appid" in entry:
-        return entry["appid"]  # None is a valid cached value (not on Steam)
+        return entry["appid"]
 
     _throttle(MIN_STORE_INTERVAL)
     try:
@@ -88,26 +81,21 @@ def search_steam_appid(game_name: str, cache: dict) -> int | None:
         cache.setdefault(game_name, {})["appid"] = None
         return None
 
-    # Fuzzy-match the top results by name
     names = [item["name"] for item in items]
     matches = difflib.get_close_matches(game_name, names, n=1, cutoff=0.4)
     if matches:
         matched_name = matches[0]
         appid = next(item["id"] for item in items if item["name"] == matched_name)
     else:
-        # Fall back to the first result
         appid = items[0]["id"]
 
     cache.setdefault(game_name, {})["appid"] = appid
     return appid
 
 
-# ── SteamSpy CCU fetch ─────────────────────────────────────────────────────────
-
 def get_steamspy_peak_ccu(appid: int, max_retries: int = 3) -> dict | None:
     """
     Fetch peak CCU and related stats from SteamSpy.
-    Retries up to max_retries times with exponential backoff on 429/5xx errors.
     Returns a dict with keys: peak_ccu, avg_2weeks_hrs — or None on failure.
     """
     url = "https://steamspy.com/api.php"
@@ -120,8 +108,7 @@ def get_steamspy_peak_ccu(appid: int, max_retries: int = 3) -> dict | None:
                 timeout=15,
             )
             if resp.status_code == 429 or resp.status_code >= 500:
-                wait = 2 ** (attempt + 1)
-                time.sleep(wait)
+                time.sleep(2 ** (attempt + 1))
                 continue
             resp.raise_for_status()
             data = resp.json()
@@ -136,18 +123,15 @@ def get_steamspy_peak_ccu(appid: int, max_retries: int = 3) -> dict | None:
     return None
 
 
-# ── Main entry point ───────────────────────────────────────────────────────────
-
 def fetch_player_data(game_names: list, progress_callback=None) -> pd.DataFrame:
     """
     Fetch peak CCU data for a list of game names.
 
     progress_callback(i, total, current_name) is called before each game is
-    processed (i = 0-indexed position) and once more at the end with i == total.
+    processed and once more at the end with i == total.
 
     Returns a DataFrame with columns:
         Game Name | App ID | Peak CCU | Avg Playtime (2wk hrs) | Peak CCU Numeric
-    Games that cannot be matched or have no data show "N/A".
     """
     cache = _load_cache()
     now   = datetime.utcnow()
@@ -159,7 +143,6 @@ def fetch_player_data(game_names: list, progress_callback=None) -> pd.DataFrame:
 
         entry = cache.get(name, {})
 
-        # Check if cached CCU data is still within TTL
         ccu_fetched_at = entry.get("ccu_fetched_at")
         ccu_fresh = (
             ccu_fetched_at is not None
@@ -167,7 +150,6 @@ def fetch_player_data(game_names: list, progress_callback=None) -> pd.DataFrame:
             and "peak_ccu" in entry
         )
 
-        # Resolve App ID (uses cache if already looked up)
         appid = search_steam_appid(name, cache)
 
         if appid is None:
@@ -181,7 +163,6 @@ def fetch_player_data(game_names: list, progress_callback=None) -> pd.DataFrame:
             _save_cache(cache)
             continue
 
-        # Fetch fresh CCU data if needed
         if not ccu_fresh:
             ccu_data = get_steamspy_peak_ccu(appid)
             if ccu_data:
@@ -226,38 +207,26 @@ def fetch_player_data(game_names: list, progress_callback=None) -> pd.DataFrame:
     ])
 
 
-# ── Daily concurrent player snapshot ──────────────────────────────────────────
-
 def fetch_player_counts_if_needed(inventory_df: pd.DataFrame, force: bool = False) -> pd.DataFrame:
     """
-    Fetch current concurrent player counts for Inactive/On-Hold Steam games
-    and append to player_counts_history.csv. Runs at most once per UTC hour.
+    Fetch current concurrent player counts for Steam games and append to
+    player_counts_history.csv. Runs at most once per UTC hour.
 
-    Args:
-        inventory_df: The full inventory DataFrame (must contain 'Inactive',
-                      'On Hold', 'steam_appid', and 'Game Name' columns).
-        force: If True, bypass the hourly guard and re-fetch immediately.
-
-    Returns:
-        The full history DataFrame (all dates).
+    Returns the full history DataFrame (all dates).
     """
     current_hour = datetime.utcnow().strftime("%Y-%m-%d %H:00")
 
-    # Load or create history
     if HISTORY_FILE.exists():
         history = pd.read_csv(HISTORY_FILE, dtype={"steam_appid": "Int64"})
     else:
         history = pd.DataFrame(columns=HISTORY_COLUMNS)
 
-    # Skip if already fetched this hour (unless forced)
     if not force and not history.empty and (history["date"] == current_hour).any():
         return history
 
-    # When forced, remove any existing rows for this hour to avoid duplicates
     if force and not history.empty:
         history = history[history["date"] != current_hour]
 
-    # Filter inventory to Inactive/On Hold Steam games that have an AppID
     required_cols = {"steam_appid", "Game Name"}
     if not required_cols.issubset(inventory_df.columns):
         return history
@@ -299,19 +268,12 @@ def fetch_player_counts_if_needed(inventory_df: pd.DataFrame, force: bool = Fals
     return history
 
 
-# ── Inventory AppID resolver ───────────────────────────────────────────────────
-
 def resolve_inventory_appids(inventory_df: pd.DataFrame) -> tuple:
     """
     Populate steam_appid for all PC (Steam) platform games in the inventory
-    that are missing it. Checks the local AppID cache first (free); only hits
-    the Steam Store search API for genuinely uncached games.
+    that are missing it. Checks the local AppID cache first.
 
-    Args:
-        inventory_df: DataFrame read from INVENTORY_FILE (index_col=0).
-
-    Returns:
-        (updated_df, n_resolved) — n_resolved is the number of new AppIDs written.
+    Returns (updated_df, n_resolved).
     """
     df = inventory_df.copy()
     if "steam_appid" not in df.columns:

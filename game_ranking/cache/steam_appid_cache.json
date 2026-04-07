@@ -1,0 +1,572 @@
+{
+  "Pokemon Legends: Z-A": {
+    "appid": null
+  },
+  "7 Days of Blood Moons": {
+    "appid": null
+  },
+  "Marvel Rivals": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 106611,
+    "avg_2weeks_hrs": 10.3,
+    "owners": "0 .. 20,000"
+  },
+  "Path of Exile 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 16727,
+    "avg_2weeks_hrs": 5.2,
+    "owners": "20,000,000 .. 50,000,000"
+  },
+  "The Stone of Madness": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 1,
+    "avg_2weeks_hrs": null,
+    "owners": "50,000 .. 100,000"
+  },
+  "Hyper Light Drifter": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 44,
+    "avg_2weeks_hrs": 3.4,
+    "owners": "1,000,000 .. 2,000,000"
+  },
+  "Hyper Light Breaker": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 31,
+    "avg_2weeks_hrs": null,
+    "owners": "100,000 .. 200,000"
+  },
+  "FREEDOM WARS Remastered": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 8,
+    "avg_2weeks_hrs": 0.1,
+    "owners": "20,000 .. 50,000"
+  },
+  "DYNASTY WARRIORS: ORIGINS": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 1314,
+    "avg_2weeks_hrs": 3.7,
+    "owners": "500,000 .. 1,000,000"
+  },
+  "Palworld": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 18028,
+    "avg_2weeks_hrs": 21.1,
+    "owners": "50,000,000 .. 100,000,000"
+  },
+  "HELLDIVERS 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 53399,
+    "avg_2weeks_hrs": 8.9,
+    "owners": "20,000,000 .. 50,000,000"
+  },
+  "Orcs Must Die! Deathtrap": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 201,
+    "avg_2weeks_hrs": 13.5,
+    "owners": "200,000 .. 500,000"
+  },
+  "Kingdom Come: Deliverance II": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 7073,
+    "avg_2weeks_hrs": 13.7,
+    "owners": "2,000,000 .. 5,000,000"
+  },
+  "Sid Meier's Civilization VII": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 5931,
+    "avg_2weeks_hrs": 3.6,
+    "owners": "1,000,000 .. 2,000,000"
+  },
+  "Monster Hunter Wilds": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 12494,
+    "avg_2weeks_hrs": 11.1,
+    "owners": "20,000,000 .. 50,000,000"
+  },
+  "Lost Records: Bloom & Rage": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 107,
+    "avg_2weeks_hrs": null,
+    "owners": "100,000 .. 200,000"
+  },
+  "The Legend of Heroes: Trails through Daybreak II": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 103,
+    "avg_2weeks_hrs": null,
+    "owners": "20,000 .. 50,000"
+  },
+  "Atomfall": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 287,
+    "avg_2weeks_hrs": 11.2,
+    "owners": "50,000 .. 100,000"
+  },
+  "Wanderstop": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 38,
+    "avg_2weeks_hrs": null,
+    "owners": "50,000 .. 100,000"
+  },
+  "Schedule I": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 22757,
+    "avg_2weeks_hrs": 8.5,
+    "owners": "10,000,000 .. 20,000,000"
+  },
+  "R.E.P.O.": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 32349,
+    "avg_2weeks_hrs": 3.0,
+    "owners": "10,000,000 .. 20,000,000"
+  },
+  "inZOI": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 1039,
+    "avg_2weeks_hrs": 2.4,
+    "owners": "1,000,000 .. 2,000,000"
+  },
+  "Grimoire Groves": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 17,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "Crashlands": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 96,
+    "avg_2weeks_hrs": null,
+    "owners": "200,000 .. 500,000"
+  },
+  "Crashlands 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 81,
+    "avg_2weeks_hrs": 0.0,
+    "owners": "50,000 .. 100,000"
+  },
+  "Mandragora: Whispers of the Witch Tree": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 71,
+    "avg_2weeks_hrs": null,
+    "owners": "100,000 .. 200,000"
+  },
+  "Clair Obscur: Expedition 33": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 27880,
+    "avg_2weeks_hrs": 7.2,
+    "owners": "2,000,000 .. 5,000,000"
+  },
+  "Assassin's Creed Shadows": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 9.6,
+    "owners": "0 .. 20,000"
+  },
+  "Diddy Kong Racing": {
+    "appid": null
+  },
+  "Donkey Kong Country\u2122 Returns HD": {
+    "appid": null
+  },
+  "Yes, Your Grace: Snowfall": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 48,
+    "avg_2weeks_hrs": null,
+    "owners": "50,000 .. 100,000"
+  },
+  "Survival Machine": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 37,
+    "avg_2weeks_hrs": null,
+    "owners": "50,000 .. 100,000"
+  },
+  "RoadCraft": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 8156,
+    "avg_2weeks_hrs": 9.9,
+    "owners": "200,000 .. 500,000"
+  },
+  "The Precinct": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 553,
+    "avg_2weeks_hrs": null,
+    "owners": "200,000 .. 500,000"
+  },
+  "Elden Ring: Nightreign": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 163599,
+    "avg_2weeks_hrs": 12.6,
+    "owners": "2,000,000 .. 5,000,000"
+  },
+  "DOOM: The Dark Ages": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 3518,
+    "avg_2weeks_hrs": 3.4,
+    "owners": "500,000 .. 1,000,000"
+  },
+  "Deliver At All Costs": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 62,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "Blue Prince": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 4395,
+    "avg_2weeks_hrs": 3.7,
+    "owners": "200,000 .. 500,000"
+  },
+  "Tinkerlands": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 1543,
+    "avg_2weeks_hrs": 76.0,
+    "owners": "100,000 .. 200,000"
+  },
+  "Stellar Blade": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 6.6,
+    "owners": "0 .. 20,000"
+  },
+  "Rematch": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "JDM: Japanese Drift Master": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 574,
+    "avg_2weeks_hrs": 1.9,
+    "owners": "50,000 .. 100,000"
+  },
+  "Gex Trilogy": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "FBC: Firebreak": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 2.3,
+    "owners": "0 .. 20,000"
+  },
+  "Dune: Awakening": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 19.4,
+    "owners": "0 .. 20,000"
+  },
+  "Deltarune": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 83936,
+    "avg_2weeks_hrs": 4.8,
+    "owners": "1,000,000 .. 2,000,000"
+  },
+  "Crime Simulator": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 4.3,
+    "owners": "0 .. 20,000"
+  },
+  "The Alters": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 3.6,
+    "owners": "0 .. 20,000"
+  },
+  "Mario Kart World": {
+    "appid": null
+  },
+  "Neon Abyss 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 4.6,
+    "owners": "0 .. 20,000"
+  },
+  "The Drifter": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "Wildgate": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "Wuchang: Fallen Feathers": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 8.1,
+    "owners": "0 .. 20,000"
+  },
+  "Killing Floor 3": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 7.0,
+    "owners": "0 .. 20,000"
+  },
+  "Grounded 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 3.0,
+    "owners": "0 .. 20,000"
+  },
+  "Donkey Kong Bananza": {
+    "appid": null
+  },
+  "Metal Gear Solid \u0394: Snake Eater": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 20.7,
+    "owners": "0 .. 20,000"
+  },
+  "Arena Breakout: Infinite": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 13.1,
+    "owners": "0 .. 20,000"
+  },
+  "Borderlands 4": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 6.5,
+    "owners": "0 .. 20,000"
+  },
+  "Hades II": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 1838,
+    "avg_2weeks_hrs": 6.2,
+    "owners": "2,000,000 .. 5,000,000"
+  },
+  "Dying Light: The Beast": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 2.4,
+    "owners": "0 .. 20,000"
+  },
+  "Hollow Knight Silksong": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 5.8,
+    "owners": "0 .. 20,000"
+  },
+  "Silent Hill f": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 10.1,
+    "owners": "0 .. 20,000"
+  },
+  "Mafia: The Old Country": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 1.9,
+    "owners": "0 .. 20,000"
+  },
+  "Cronos: The New Dawn": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 0.1,
+    "owners": "0 .. 20,000"
+  },
+  "Sword of the sea": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "2XKO": {
+    "appid": null
+  },
+  "Battlefield 6": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 7.0,
+    "owners": "0 .. 20,000"
+  },
+  "Megabonk ": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 5.0,
+    "owners": "0 .. 20,000"
+  },
+  "Little Nightmares 3": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 1.2,
+    "owners": "0 .. 20,000"
+  },
+  "Stick it to the Stickman": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 2.1,
+    "owners": "0 .. 20,000"
+  },
+  "EA SPORTS FC 26": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 13.2,
+    "owners": "0 .. 20,000"
+  },
+  "Ghost of Yotei": {
+    "appid": null
+  },
+  "Vampire: The Masquerade - Bloodlines 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 12.9,
+    "owners": "0 .. 20,000"
+  },
+  "ARC Raiders": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 16.8,
+    "owners": "0 .. 20,000"
+  },
+  "The Outer Worlds 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "Escape from Duckov": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 12.2,
+    "owners": "0 .. 20,000"
+  },
+  "Ninja Gaiden 4": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 0.7,
+    "owners": "0 .. 20,000"
+  },
+  "Jurassic World Evolution 3": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 8.2,
+    "owners": "0 .. 20,000"
+  },
+  "Europa Universalis V": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 14.9,
+    "owners": "0 .. 20,000"
+  },
+  "Dispatch ": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 4.5,
+    "owners": "0 .. 20,000"
+  },
+  "Death Stranding 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 12.8,
+    "owners": "0 .. 20,000"
+  },
+  "South of Midnight": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 82,
+    "avg_2weeks_hrs": null,
+    "owners": "50,000 .. 100,000"
+  },
+  "Sonic Racing: CrossWorlds": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 2.1,
+    "owners": "0 .. 20,000"
+  },
+  "Peak": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 5,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "Indiana Jones and the Great Circle": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 274,
+    "avg_2weeks_hrs": 2.2,
+    "owners": "200,000 .. 500,000"
+  },
+  "F1 25": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 5272,
+    "avg_2weeks_hrs": 5.8,
+    "owners": "100,000 .. 200,000"
+  },
+  "Escape from Tarkov": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 26.3,
+    "owners": "0 .. 20,000"
+  },
+  "BALL x PIT": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 7.6,
+    "owners": "0 .. 20,000"
+  },
+  "Avowed": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 157,
+    "avg_2weeks_hrs": 33.5,
+    "owners": "500,000 .. 1,000,000"
+  },
+  "Absolum": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 3.9,
+    "owners": "0 .. 20,000"
+  },
+  "Routine": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": null,
+    "owners": "0 .. 20,000"
+  },
+  "Terra Invicta": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 697,
+    "avg_2weeks_hrs": 4.9,
+    "owners": "200,000 .. 500,000"
+  },
+  "StarRupture": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 7.0,
+    "owners": "0 .. 20,000"
+  },
+  "Nioh 3": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 7.3,
+    "owners": "0 .. 20,000"
+  },
+  "Mewgenics": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 13.8,
+    "owners": "0 .. 20,000"
+  },
+  "Cairn": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 4.0,
+    "owners": "0 .. 20,000"
+  },
+  "ReAnimal": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 3.7,
+    "owners": "0 .. 20,000"
+  },
+  "High on life 2": {
+    "ccu_fetched_at": "2026-03-26T14:28:33.072755",
+    "peak_ccu": 0,
+    "avg_2weeks_hrs": 0.5,
+    "owners": "0 .. 20,000"
+  }
+}

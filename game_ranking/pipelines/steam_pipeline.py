@@ -2,7 +2,7 @@
 Steam Pipeline
 ==============
 Triggers the C# Gawk-3000 scraper via `dotnet run` in non-interactive mode,
-then appends newly scraped games to default_files/raw_steam.csv.
+then appends newly scraped games to raw/raw_steam_YYYY-MM-DD.csv.
 
 The scraper is fed via stdin so it never blocks waiting for Console.ReadLine().
 Menu flow automated:
@@ -18,45 +18,33 @@ import tempfile
 import pandas as pd
 from datetime import datetime, date
 from pathlib import Path
-from config import CSV_STEAM, BASE_DIR, RAW_DIR, get_latest_steam_csv
-from pipeline.state import get_next_window, mark_run_complete, load_state
+from config import CSV_STEAM, BASE_DIR, RAW_DIR, CACHE_DIR, get_latest_steam_csv
+from pipelines.state import get_next_window, mark_run_complete, load_state
 
 logger = logging.getLogger(__name__)
 
-# Paths
-SCRAPER_DIR = BASE_DIR.parent / "Release-Gawk-3000" / "Gawk-3000"  # Folder containing Gawk-3000.csproj — adjust if in a subfolder
+SCRAPER_DIR  = BASE_DIR.parent / "Release-Gawk-3000" / "Gawk-3000"
 RAW_STEAM_CSV = CSV_STEAM
-TEMP_EXPORT = BASE_DIR / "default_files" / "_steam_temp_export.csv"
+TEMP_EXPORT   = CACHE_DIR / "_steam_temp_export.csv"
 
 
 def _build_stdin_for_export(start_date: str, end_date: str) -> str:
     """
     Build the stdin string that answers the C# program's Console.ReadLine() prompts
     for menu option 3 (Export cache to CSV).
-
-    Prompt order in CreateCsvFromCache:
-      1. Output file name
-      2. Include genres? (y)
-      3. Include categories? (y)
-      4. Include publishers? (y)
-      5. Include developers? (y)
-      6. Filter by date? (y)
-      7. Start date
-      8. End date
-    Then back to main menu → 6 to exit.
     """
     lines = [
-        "3",                          # Main menu: Export cache to CSV
-        str(TEMP_EXPORT),             # Output file path
-        "y",                          # Include genres
-        "y",                          # Include categories
-        "y",                          # Include publishers
-        "y",                          # Include developers
-        "y",                          # Filter by date
-        start_date,                   # Start date
-        end_date,                     # End date
-        "",                           # Press any key (handled by ReadKey — send newline)
-        "6",                          # Exit
+        "3",
+        str(TEMP_EXPORT),
+        "y",   # Include genres
+        "y",   # Include categories
+        "y",   # Include publishers
+        "y",   # Include developers
+        "y",   # Filter by date
+        start_date,
+        end_date,
+        "",    # Press any key
+        "6",   # Exit
     ]
     return "\n".join(lines) + "\n"
 
@@ -78,10 +66,9 @@ def run_steam_scraper(start_date=None, end_date=None, status_callback=None) -> d
         if status_callback:
             status_callback(msg)
 
-    # Use provided dates or get next window
     if start_date is None or end_date is None:
         start_date, end_date = get_next_window("steam", window_days=14)
-    
+
     log(f"🗓️ Steam scrape window: {start_date} → {end_date}")
 
     stdin_payload = _build_stdin_for_export(start_date, end_date)
@@ -93,7 +80,7 @@ def run_steam_scraper(start_date=None, end_date=None, status_callback=None) -> d
             input=stdin_payload,
             capture_output=True,
             text=True,
-            timeout=300,  # 5 minute timeout
+            timeout=300,
             cwd=str(SCRAPER_DIR),
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         )
@@ -104,15 +91,14 @@ def run_steam_scraper(start_date=None, end_date=None, status_callback=None) -> d
             return {"success": False, "new_rows": 0, "window_start": start_date,
                     "window_end": end_date, "error": error_msg[:500]}
 
-        log(f"✅ dotnet run completed")
+        log("✅ dotnet run completed")
 
-        # Check temp export was created
         if not TEMP_EXPORT.exists():
             return {"success": False, "new_rows": 0, "window_start": start_date,
                     "window_end": end_date, "error": "Temp export CSV not created by scraper"}
 
         new_rows = _append_to_raw_steam(start_date, end_date, log)
-        TEMP_EXPORT.unlink(missing_ok=True)  # Clean up temp file
+        TEMP_EXPORT.unlink(missing_ok=True)
 
         mark_run_complete("steam", start_date, end_date)
         log(f"✅ Steam pipeline complete. {new_rows} new games appended.")
@@ -126,7 +112,7 @@ def run_steam_scraper(start_date=None, end_date=None, status_callback=None) -> d
                 "window_end": end_date, "error": msg}
     except FileNotFoundError:
         msg = ("dotnet not found. Make sure the .NET SDK is installed and "
-               "the Gawk-3000 project path is set correctly in pipeline/steam_pipeline.py")
+               "the Gawk-3000 project path is set correctly in pipelines/steam_pipeline.py")
         log(f"❌ {msg}")
         return {"success": False, "new_rows": 0, "window_start": start_date,
                 "window_end": end_date, "error": msg}
@@ -163,7 +149,6 @@ def _append_to_raw_steam(start_date: str, end_date: str, log) -> int:
 
     new_df = _normalize_release_dates(new_df)
 
-    # Rename AppId column if needed (C# exports as 'AppId', existing CSV uses 'AppId')
     if "AppId" not in new_df.columns and "appid" in new_df.columns.str.lower().tolist():
         new_df = new_df.rename(columns={c: "AppId" for c in new_df.columns if c.lower() == "appid"})
 
@@ -179,10 +164,8 @@ def _append_to_raw_steam(start_date: str, end_date: str, log) -> int:
             log("ℹ️ No new unique AppIds found — CSV already up to date")
             return 0
 
-        # Stamp only the newly appended rows
         new_only["date_appended"] = date.today().isoformat()
 
-        # Align columns: add missing columns as NaN, drop extras
         all_cols = existing_df.columns.tolist()
         if "date_appended" not in all_cols:
             all_cols.append("date_appended")
@@ -220,7 +203,6 @@ def append_from_uploaded_steam_csv(uploaded_df: pd.DataFrame) -> tuple:
 
     uploaded_df = uploaded_df.copy()
 
-    # Normalise AppId column name (handle case variance)
     for col in list(uploaded_df.columns):
         if col.lower() == "appid" and col != "AppId":
             uploaded_df = uploaded_df.rename(columns={col: "AppId"})
@@ -240,7 +222,6 @@ def append_from_uploaded_steam_csv(uploaded_df: pd.DataFrame) -> tuple:
 
         kept = existing_df[~existing_df["AppId"].astype(str).isin(upload_ids)].copy()
 
-        # Align columns so concat doesn't introduce NaN-filled mismatches
         all_cols = existing_df.columns.tolist()
         if "date_appended" not in all_cols:
             all_cols.append("date_appended")
