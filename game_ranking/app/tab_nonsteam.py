@@ -56,7 +56,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     # ── Sidebar config ────────────────────────────────────────────────────────
     st.sidebar.header("Non-Steam Scoring")
     w_youtube = st.sidebar.slider("YouTube Weight", 0, 5, 5)
-    w_trends  = st.sidebar.slider("Trends Weight",  0, 5, 2)
+    w_trends  = st.sidebar.slider("Trends Weight",  0, 5, 2, key="ns_w_trends")
 
     # ── Pre-processing: filter to ranked games ────────────────────────────────
     df_nonsteam['SteamStatus'] = df_nonsteam['SteamStatus'].fillna('Needs Verification')
@@ -180,7 +180,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
         nf_col1, nf_col2, nf_col3 = st.columns(3)
 
         with nf_col1:
-            st.markdown("**YouTube Release Date**")
+            st.markdown("**Release Date**")
             ns_start = st.date_input(
                 "From", value=st.session_state.get("ns_start_date", global_date_min),
                 min_value=global_date_min, max_value=global_date_max,
@@ -236,10 +236,10 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     df_filtered_ns = df_non_steam_ranked.copy()
 
     if apply_ns:
-        if 'YouTube ReleaseDate' in df_filtered_ns.columns:
-            yt_dates = pd.to_datetime(df_filtered_ns['YouTube ReleaseDate'], errors='coerce')
-            in_range = yt_dates.between(pd.Timestamp(ns_start), pd.Timestamp(ns_end))
-            df_filtered_ns = df_filtered_ns[yt_dates.isna() | in_range]
+        if 'Release Date' in df_filtered_ns.columns:
+            rel_dates = pd.to_datetime(df_filtered_ns['Release Date'], errors='coerce')
+            in_range = rel_dates.between(pd.Timestamp(ns_start), pd.Timestamp(ns_end))
+            df_filtered_ns = df_filtered_ns[rel_dates.isna() | in_range]
 
         if selected_platforms and 'Platforms' in df_filtered_ns.columns:
             def has_platform(val):

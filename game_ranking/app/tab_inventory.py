@@ -3,6 +3,7 @@ Game Inventory tab.
 """
 
 import datetime as dt
+import time
 
 import pandas as pd
 import streamlit as st
@@ -13,8 +14,9 @@ try:
 except ImportError:
     _HAS_ALTAIR = False
 
-from config import INVENTORY_FILE, STEAMSPY_CACHE_FILE
+from config import INVENTORY_FILE, STEAMSPY_CACHE_FILE, TRENDS_CACHE_FILE
 from calculation.steam_players import fetch_player_data, fetch_player_counts_if_needed
+from calculation.process_data import calculate_google_trends_points
 
 
 def _sync_from_inv_dates():
@@ -178,6 +180,12 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
         except Exception:
             pass
 
+    # Add Trends Score from shared cache (display only — not persisted to CSV)
+    filtered = filtered.copy()
+    filtered['Trends Score'] = (
+        filtered['Game Name'].map(st.session_state.nonsteam_trends).fillna(0).astype(int)
+    )
+
     # ── Game Library table ────────────────────────────────────────────────────
     tbl_col, btn_col = st.columns([5, 1])
     with tbl_col:
@@ -223,6 +231,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                 "Active":         st.column_config.CheckboxColumn("Active"),
                 "Reviewed":       st.column_config.CheckboxColumn("Reviewed"),
                 "Links":          st.column_config.LinkColumn("Links", display_text="Open Link"),
+                "Trends Score":   st.column_config.NumberColumn("Trends Score", disabled=True, format="%d"),
             },
             on_change=handle_change,
         )
@@ -335,13 +344,32 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
         if "fetching_players" not in st.session_state:
             st.session_state.fetching_players = False
 
-        fetch_col, info_col = st.columns([2, 5])
+        fetch_col, trends_col, info_col = st.columns([2, 2, 3])
         with fetch_col:
             fetch_btn = st.button(
                 "🔄 Fetch Player Counts",
                 key="inv_fetch_players",
                 disabled=st.session_state.fetching_players,
             )
+        with trends_col:
+            if st.button("📊 Refresh Trends", key="fetch_inv_trends",
+                         help="Fetch Google Trends scores for all games (1–2 min)", use_container_width=True):
+                games = filtered["Game Name"].dropna().unique().tolist()
+                bar = st.progress(0, text="Starting…")
+                for i, game in enumerate(games):
+                    try:
+                        score = calculate_google_trends_points(game)
+                        st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+                    except Exception:
+                        st.session_state.nonsteam_trends[game] = 0
+                    cache_df = pd.DataFrame(
+                        [{"game_name": k, "trends_score": v} for k, v in st.session_state.nonsteam_trends.items()]
+                    )
+                    cache_df.to_csv(TRENDS_CACHE_FILE, index=False)
+                    time.sleep(1.5)
+                    bar.progress((i + 1) / len(games), text=f"{i+1}/{len(games)}: {game}")
+                st.toast("Trends data updated!", icon="📊")
+                st.rerun()
         with info_col:
             if st.session_state.player_count_last_fetched:
                 st.caption(f"Last fetched: {st.session_state.player_count_last_fetched}")
@@ -398,6 +426,9 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                         .copy()
                         .merge(latest_ccu, on="Game Name", how="left")
                     )
+                    plot_df["Trends Score"] = (
+                        plot_df["Game Name"].map(st.session_state.nonsteam_trends).fillna(0).astype(int)
+                    )
 
                     plot_df["pct_of_peak"] = (
                         plot_df["Current CCU"] / plot_df["Peak CCU Numeric"] * 100
@@ -441,6 +472,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                                     alt.Tooltip("Avg Playtime (2wk hrs):Q", title="Avg Playtime 2wk (hrs)"),
                                     alt.Tooltip("pct_of_peak:Q",            title="% of Peak", format=".1f"),
                                     alt.Tooltip("trend_label:N",            title="Trend"),
+                                    alt.Tooltip("Trends Score:Q",           title="Google Trends Score"),
                                 ],
                             )
                         )

@@ -11,7 +11,7 @@ GENRES = pd.read_excel(GENRE_LIST)["Genre"].tolist()
 # can be rescaled to be comparable across batches.
 ANCHOR = "video game"
 
-TIMEFRAME   = "today 12-m"   # Past 12 months
+TIMEFRAME   = "today 12-m"   # 
 GEO         = ""              # Worldwide
 BATCH_SIZE  = 4              # Max 4 genres + 1 anchor = 5 keywords per request
 OUTPUT_FILE = str(CACHE_DIR / "gaming_genre_trends.csv")
@@ -71,7 +71,11 @@ def fetch_game_trends(game_name: str) -> int:
     topic = resolve_game_topic(pytrends, game_name)
     time.sleep(1)
     try:
-        df = fetch_with_retry(pytrends, [topic])
+        df = fetch_with_retry(pytrends, [topic], timeframe="now 1-d")
+        if df.empty:
+            return 0
+        if "isPartial" in df.columns:
+            df = df.drop(columns=["isPartial"])
         if df.empty:
             return 0
         col = topic if topic in df.columns else df.columns[0]
@@ -81,10 +85,10 @@ def fetch_game_trends(game_name: str) -> int:
         return 0
 
 
-def fetch_with_retry(pytrends: TrendReq, keywords: list[str]) -> pd.DataFrame:
+def fetch_with_retry(pytrends: TrendReq, keywords: list[str], timeframe: str = TIMEFRAME) -> pd.DataFrame:
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            pytrends.build_payload(kw_list=keywords, timeframe=TIMEFRAME, geo=GEO, gprop="")
+            pytrends.build_payload(kw_list=keywords, timeframe=timeframe, geo=GEO, gprop="")
             df = pytrends.interest_over_time()
             if df.empty:
                 log.warning("Empty response for keywords: %s", keywords)
