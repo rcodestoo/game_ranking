@@ -187,8 +187,14 @@ if "nonsteam_trends" not in st.session_state:
     if TRENDS_CACHE_FILE.exists():
         _tc = pd.read_csv(TRENDS_CACHE_FILE)
         st.session_state.nonsteam_trends = dict(zip(_tc["game_name"], _tc["trends_score"]))
+        if "fetched_at" in _tc.columns:
+            _fetched_vals = _tc["fetched_at"].dropna()
+            st.session_state.trends_last_fetched_at = str(_fetched_vals.iloc[-1]) if len(_fetched_vals) else None
+        else:
+            st.session_state.trends_last_fetched_at = None
     else:
         st.session_state.nonsteam_trends = {}
+        st.session_state.trends_last_fetched_at = None
 
 # ── TABS ───────────────────────────────────────────────────────────────────────
 _tab_steam, _tab_nonsteam, _tab_inventory = st.tabs(

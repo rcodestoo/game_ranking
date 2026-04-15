@@ -356,6 +356,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                          help="Fetch Google Trends scores for all games (1–2 min)", use_container_width=True):
                 games = filtered["Game Name"].dropna().unique().tolist()
                 bar = st.progress(0, text="Starting…")
+                _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 for i, game in enumerate(games):
                     try:
                         score = calculate_google_trends_points(game)
@@ -363,13 +364,24 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                     except Exception:
                         st.session_state.nonsteam_trends[game] = 0
                     cache_df = pd.DataFrame(
-                        [{"game_name": k, "trends_score": v} for k, v in st.session_state.nonsteam_trends.items()]
+                        [{"game_name": k, "trends_score": v, "fetched_at": _refresh_ts}
+                         for k, v in st.session_state.nonsteam_trends.items()]
                     )
                     cache_df.to_csv(TRENDS_CACHE_FILE, index=False)
                     time.sleep(1.5)
                     bar.progress((i + 1) / len(games), text=f"{i+1}/{len(games)}: {game}")
+                st.session_state.trends_last_fetched_at = _refresh_ts
                 st.toast("Trends data updated!", icon="📊")
                 st.rerun()
+            _ts = st.session_state.get("trends_last_fetched_at")
+            if _ts:
+                try:
+                    _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
+                    st.caption(f"Last fetched: {_dt.strftime('%d %b %Y, %H:%M')}")
+                except Exception:
+                    st.caption(f"Last fetched: {_ts}")
+            else:
+                st.caption("Never fetched")
         with info_col:
             if st.session_state.player_count_last_fetched:
                 st.caption(f"Last fetched: {st.session_state.player_count_last_fetched}")

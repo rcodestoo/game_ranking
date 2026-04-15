@@ -28,6 +28,14 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     df_nonsteam = st.session_state.df_nonsteam.copy()
     nonsteam_source_name = st.session_state.get("nonsteam_source", "default file")
 
+    # Normalise date_appended to YYYY-MM-DD so sorting and "New Today" checks
+    # work correctly regardless of whether the CSV used M/D/YYYY or ISO format.
+    if 'date_appended' in df_nonsteam.columns:
+        df_nonsteam['date_appended'] = (
+            pd.to_datetime(df_nonsteam['date_appended'], errors='coerce')
+            .dt.strftime('%Y-%m-%d')
+        )
+
     # ── Deduplicate: keep most recent row per Game Title ──────────────────────
     if 'Game Title' in df_nonsteam.columns:
         # Determine recency column: prefer date_appended, then YouTube ReleaseDate, then Release Date
@@ -65,17 +73,37 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
         (df_nonsteam['SteamStatus'] != 'Needs Verification') &
         (df_nonsteam['Category'].str.strip().str.lower() == 'main game')
     ].copy()
-    # Replace literal 'N/A' / 'n/a' strings with NaN before parsing
+    # Parse date columns robustly — CSVs may contain mixed D/M/YYYY and M/D/YYYY.
+    # Detection logic: if part[0] > 12 → D/M; if part[1] > 12 → M/D; ambiguous → D/M.
+    # Also replaces literal 'N/A' strings and handles ISO format passthrough.
+    def _parse_date_series(series: pd.Series) -> pd.Series:
+        def _parse(val):
+            if pd.isna(val) or str(val).strip() == '':
+                return pd.NaT
+            s = str(val).strip()
+            if s.lower() in ('n/a', 'na', 'none'):
+                return pd.NaT
+            if len(s) >= 10 and s[4] == '-':
+                return pd.to_datetime(s, errors='coerce')
+            if '/' in s:
+                parts = s.split('/')
+                if len(parts) == 3:
+                    try:
+                        p1, p2 = int(parts[0]), int(parts[1])
+                        if p1 > 12:
+                            dayfirst = True
+                        elif p2 > 12:
+                            dayfirst = False
+                        else:
+                            dayfirst = True   # ambiguous → D/M
+                        return pd.to_datetime(s, dayfirst=dayfirst, errors='coerce')
+                    except (ValueError, TypeError):
+                        pass
+            return pd.to_datetime(s, dayfirst=True, errors='coerce')
+        return series.apply(_parse)
+
     for _dc in ['YouTube ReleaseDate', 'Release Date']:
-        df_nonsteam_filter[_dc] = df_nonsteam_filter[_dc].replace(
-            r'(?i)^n/?a$', pd.NaT, regex=True
-        )
-    df_nonsteam_filter['YouTube ReleaseDate'] = pd.to_datetime(
-        df_nonsteam_filter['YouTube ReleaseDate'], errors='coerce'
-    )
-    df_nonsteam_filter['Release Date'] = pd.to_datetime(
-        df_nonsteam_filter['Release Date'], errors='coerce'
-    )
+        df_nonsteam_filter[_dc] = _parse_date_series(df_nonsteam_filter[_dc])
 
     # ── Score calculation ─────────────────────────────────────────────────────
     today = dt.date.today()
@@ -155,6 +183,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
                      help="Fetch Google Trends scores for all games (1–2 min)", use_container_width=True):
             games = df_non_steam_ranked["Game Title"].dropna().unique().tolist()
             bar = st.progress(0, text="Starting…")
+            _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             for i, game in enumerate(games):
                 try:
                     score = calculate_google_trends_points(game)
@@ -162,13 +191,24 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
                 except Exception:
                     st.session_state.nonsteam_trends[game] = 0
                 cache_df = pd.DataFrame(
-                    [{"game_name": k, "trends_score": v} for k, v in st.session_state.nonsteam_trends.items()]
+                    [{"game_name": k, "trends_score": v, "fetched_at": _refresh_ts}
+                     for k, v in st.session_state.nonsteam_trends.items()]
                 )
                 cache_df.to_csv(TRENDS_CACHE_FILE, index=False)
                 time.sleep(1.5)
                 bar.progress((i + 1) / len(games), text=f"{i+1}/{len(games)}: {game}")
+            st.session_state.trends_last_fetched_at = _refresh_ts
             st.toast("Trends data updated!", icon="📊")
         st.markdown("</div>", unsafe_allow_html=True)
+        _ts = st.session_state.get("trends_last_fetched_at")
+        if _ts:
+            try:
+                _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
+                st.caption(f"Last fetched: {_dt.strftime('%d %b %Y, %H:%M')}")
+            except Exception:
+                st.caption(f"Last fetched: {_ts}")
+        else:
+            st.caption("Never fetched")
 
     st.divider()
 

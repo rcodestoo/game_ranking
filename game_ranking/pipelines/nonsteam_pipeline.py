@@ -449,17 +449,48 @@ def _normalize_nonsteam_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def _normalize_release_date(series: pd.Series) -> pd.Series:
     """
-    Convert Release Date values to ISO format (YYYY-MM-DD) where parseable.
+    Convert date values to ISO format (YYYY-MM-DD) where parseable.
+    Handles mixed D/M/YYYY and M/D/YYYY slash formats by inspecting the
+    numeric parts to determine which format is unambiguous:
+      - part[0] > 12  → must be D/M/YYYY  (e.g. 15/1/2026)
+      - part[1] > 12  → must be M/D/YYYY  (e.g. 3/17/2026)
+      - both ≤ 12     → ambiguous; defaults to D/M/YYYY
     Non-date strings like 'Coming Soon' or 'TBD' are kept as-is.
     """
     def _parse(val):
         if pd.isna(val) or str(val).strip() == "":
             return None
         s = str(val).strip()
+
+        # Already ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS...)
+        if len(s) >= 10 and s[4] == '-':
+            try:
+                return pd.to_datetime(s).strftime("%Y-%m-%d")
+            except Exception:
+                return s
+
+        # Slash-separated: detect format from numeric parts
+        if '/' in s:
+            parts = s.split('/')
+            if len(parts) == 3:
+                try:
+                    p1, p2 = int(parts[0]), int(parts[1])
+                    if p1 > 12:
+                        dayfirst = True   # e.g. 15/1/2026 → day=15
+                    elif p2 > 12:
+                        dayfirst = False  # e.g. 3/17/2026 → month=3
+                    else:
+                        dayfirst = True   # ambiguous → default D/M
+                    return pd.to_datetime(s, dayfirst=dayfirst).strftime("%Y-%m-%d")
+                except Exception:
+                    return s
+
+        # Fallback for any other format pandas can parse (e.g. 'Jan 15, 2026')
         try:
-            return pd.to_datetime(s, dayfirst=False).strftime("%Y-%m-%d")
+            return pd.to_datetime(s, dayfirst=True).strftime("%Y-%m-%d")
         except Exception:
-            return s
+            return s  # 'Coming Soon', 'TBD', 'N/A', etc.
+
     return series.apply(_parse)
 
 
@@ -483,6 +514,7 @@ def _append_to_raw_nonsteam(log) -> int:
     new_df["date_appended"] = None
     new_df = _normalize_nonsteam_df(new_df)
     new_df["Release Date"] = _normalize_release_date(new_df["Release Date"])
+    new_df["YouTube ReleaseDate"] = _normalize_release_date(new_df["YouTube ReleaseDate"])
 
     no_video = (
         new_df["YouTube URL"].isna() |
@@ -535,6 +567,7 @@ def append_from_uploaded_nonsteam_csv(uploaded_df: pd.DataFrame) -> tuple:
     uploaded_df = uploaded_df.copy()
     uploaded_df = _normalize_nonsteam_df(uploaded_df)
     uploaded_df["Release Date"] = _normalize_release_date(uploaded_df["Release Date"])
+    uploaded_df["YouTube ReleaseDate"] = _normalize_release_date(uploaded_df["YouTube ReleaseDate"])
 
     no_video = (
         uploaded_df["YouTube URL"].isna() |
