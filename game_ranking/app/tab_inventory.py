@@ -17,6 +17,7 @@ except ImportError:
 from config import INVENTORY_FILE, STEAMSPY_CACHE_FILE, TRENDS_CACHE_FILE
 from calculation.steam_players import fetch_player_data, fetch_player_counts_if_needed
 from calculation.process_data import calculate_google_trends_points
+from app.helpers import filter_stale_trends_games, load_trends_cache_timestamps
 
 
 def _sync_from_inv_dates():
@@ -353,26 +354,35 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             )
         with trends_col:
             if st.button("📊 Refresh Trends", key="fetch_inv_trends",
-                         help="Fetch Google Trends scores for all games (1–2 min)", use_container_width=True):
+                         help="Fetch Google Trends scores for filtered games", use_container_width=True):
                 games = filtered["Game Name"].dropna().unique().tolist()
-                bar = st.progress(0, text="Starting…")
-                _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                for i, game in enumerate(games):
-                    try:
-                        score = calculate_google_trends_points(game)
-                        st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
-                    except Exception:
-                        st.session_state.nonsteam_trends[game] = 0
-                    cache_df = pd.DataFrame(
-                        [{"game_name": k, "trends_score": v, "fetched_at": _refresh_ts}
-                         for k, v in st.session_state.nonsteam_trends.items()]
-                    )
-                    cache_df.to_csv(TRENDS_CACHE_FILE, index=False)
-                    time.sleep(1.5)
-                    bar.progress((i + 1) / len(games), text=f"{i+1}/{len(games)}: {game}")
-                st.session_state.trends_last_fetched_at = _refresh_ts
-                st.toast("Trends data updated!", icon="📊")
-                st.rerun()
+                _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
+                games_to_fetch = filter_stale_trends_games(games, _cached_ts)
+                if not games_to_fetch:
+                    st.toast("All trends data is fresh (< 24 h)", icon="✅")
+                else:
+                    bar = st.progress(0, text="Starting…")
+                    _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    for i, game in enumerate(games_to_fetch):
+                        try:
+                            score = calculate_google_trends_points(game)
+                            st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+                        except Exception as e:
+                            st.session_state.nonsteam_trends[game] = 0
+                            st.error(f"Trends fetch failed for '{game}': {e}")
+                        bar.progress((i + 1) / len(games_to_fetch), text=f"{i+1}/{len(games_to_fetch)}: {game}")
+                        try:
+                            pd.DataFrame([
+                                {"game_name": k, "trends_score": v,
+                                 "fetched_at": _refresh_ts if k in games_to_fetch else _cached_ts.get(k, _refresh_ts)}
+                                for k, v in st.session_state.nonsteam_trends.items()
+                            ]).to_csv(TRENDS_CACHE_FILE, index=False)
+                        except Exception as e:
+                            st.error(f"Cache write failed: {e}")
+                        time.sleep(1.5)
+                    st.session_state.trends_last_fetched_at = _refresh_ts
+                    st.toast(f"Updated {len(games_to_fetch)} game(s)", icon="📊")
+                    st.rerun()
             _ts = st.session_state.get("trends_last_fetched_at")
             if _ts:
                 try:

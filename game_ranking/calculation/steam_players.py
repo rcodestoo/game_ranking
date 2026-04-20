@@ -33,6 +33,16 @@ HISTORY_COLUMNS        = ["date", "game_name", "steam_appid", "player_count"]
 _last_request_time: float = 0.0
 
 
+def parse_owners_midpoint(owners_str: str) -> int:
+    """Parse '200,000 .. 500,000' → 350000. Returns 0 on failure."""
+    try:
+        parts = owners_str.replace(",", "").split("..")
+        lo, hi = int(parts[0].strip()), int(parts[1].strip())
+        return (lo + hi) // 2
+    except Exception:
+        return 0
+
+
 def _load_cache() -> dict:
     if CACHE_FILE.exists():
         try:
@@ -45,6 +55,11 @@ def _load_cache() -> dict:
 def _save_cache(cache: dict) -> None:
     CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
     CACHE_FILE.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+
+
+def load_appid_cache() -> dict:
+    """Return the current app ID / SteamSpy cache dict (public accessor)."""
+    return _load_cache()
 
 
 def _throttle(interval: float) -> None:
@@ -96,7 +111,8 @@ def search_steam_appid(game_name: str, cache: dict) -> int | None:
 def get_steamspy_peak_ccu(appid: int, max_retries: int = 3) -> dict | None:
     """
     Fetch peak CCU and related stats from SteamSpy.
-    Returns a dict with keys: peak_ccu, avg_2weeks_hrs — or None on failure.
+    Returns a dict with keys: peak_ccu, avg_2weeks_hrs, owners_range,
+    initialprice_cents — or None on failure.
     """
     url = "https://steamspy.com/api.php"
     for attempt in range(max_retries):
@@ -114,8 +130,10 @@ def get_steamspy_peak_ccu(appid: int, max_retries: int = 3) -> dict | None:
             data = resp.json()
             avg_2wk_mins = data.get("average_2weeks") or 0
             return {
-                "peak_ccu":       data.get("ccu"),
-                "avg_2weeks_hrs": round(avg_2wk_mins / 60, 1) if avg_2wk_mins else None,
+                "peak_ccu":          data.get("ccu"),
+                "avg_2weeks_hrs":    round(avg_2wk_mins / 60, 1) if avg_2wk_mins else None,
+                "owners_range":      data.get("owners", ""),
+                "initialprice_cents": int(data.get("initialprice") or 0),
             }
         except Exception:
             if attempt < max_retries - 1:
@@ -167,16 +185,20 @@ def fetch_player_data(game_names: list, progress_callback=None) -> pd.DataFrame:
             ccu_data = get_steamspy_peak_ccu(appid)
             if ccu_data:
                 entry.update({
-                    "ccu_fetched_at":  now.isoformat(),
-                    "peak_ccu":        ccu_data["peak_ccu"],
-                    "avg_2weeks_hrs":  ccu_data["avg_2weeks_hrs"],
+                    "ccu_fetched_at":     now.isoformat(),
+                    "peak_ccu":           ccu_data["peak_ccu"],
+                    "avg_2weeks_hrs":     ccu_data["avg_2weeks_hrs"],
+                    "owners_range":       ccu_data["owners_range"],
+                    "initialprice_cents": ccu_data["initialprice_cents"],
                 })
                 cache[name] = entry
                 _save_cache(cache)
         else:
             ccu_data = {
-                "peak_ccu":       entry.get("peak_ccu"),
-                "avg_2weeks_hrs": entry.get("avg_2weeks_hrs"),
+                "peak_ccu":           entry.get("peak_ccu"),
+                "avg_2weeks_hrs":     entry.get("avg_2weeks_hrs"),
+                "owners_range":       entry.get("owners_range") or entry.get("owners", ""),
+                "initialprice_cents": entry.get("initialprice_cents"),
             }
 
         if ccu_data:

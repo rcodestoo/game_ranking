@@ -10,7 +10,8 @@ import pandas as pd
 import streamlit as st
 
 # from app.thread_state import _ns_thread_state, _ns_verify_thread_state  # scraper disabled
-from app.helpers import highlight_new_rows, reload_nonsteam_from_csv  # format_last_run, format_next_window unused
+from app.helpers import (highlight_new_rows, reload_nonsteam_from_csv,
+                         filter_stale_trends_games, load_trends_cache_timestamps)
 from calculation.process_data import calculate_google_trends_points, calculate_hybrid_score, calculate_trends_weighted_points
 from config import TRENDS_CACHE_FILE  # get_latest_nonsteam_csv unused (scraper disabled)
 # from pipelines.nonsteam_pipeline import run_nonsteam_scraper, verify_single_game_steam_status  # scraper disabled
@@ -172,43 +173,11 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     _top_score = df_non_steam_ranked['priority_score'].max() if len(df_non_steam_ranked) else 0
     _trends_cached = int((df_non_steam_ranked['trends_score'] > 0).sum()) if len(df_non_steam_ranked) else 0
 
-    m1, m2, m3, m4, m5 = st.columns(5)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total Games", len(df_non_steam_ranked), border=True)
     m2.metric("Top Priority Score", f"{_top_score:.1f}", border=True)
     m3.metric("New Today", _new_today, border=True)
     m4.metric("Trends Cached", _trends_cached, help="Games with a cached Google Trends score", border=True)
-    with m5:
-        st.markdown("<div style='padding-top: 20px'>", unsafe_allow_html=True)
-        if st.button("📊 Refresh Trends", key="fetch_nonsteam_trends",
-                     help="Fetch Google Trends scores for all games (1–2 min)", use_container_width=True):
-            games = df_non_steam_ranked["Game Title"].dropna().unique().tolist()
-            bar = st.progress(0, text="Starting…")
-            _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            for i, game in enumerate(games):
-                try:
-                    score = calculate_google_trends_points(game)
-                    st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
-                except Exception:
-                    st.session_state.nonsteam_trends[game] = 0
-                cache_df = pd.DataFrame(
-                    [{"game_name": k, "trends_score": v, "fetched_at": _refresh_ts}
-                     for k, v in st.session_state.nonsteam_trends.items()]
-                )
-                cache_df.to_csv(TRENDS_CACHE_FILE, index=False)
-                time.sleep(1.5)
-                bar.progress((i + 1) / len(games), text=f"{i+1}/{len(games)}: {game}")
-            st.session_state.trends_last_fetched_at = _refresh_ts
-            st.toast("Trends data updated!", icon="📊")
-        st.markdown("</div>", unsafe_allow_html=True)
-        _ts = st.session_state.get("trends_last_fetched_at")
-        if _ts:
-            try:
-                _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
-                st.caption(f"Last fetched: {_dt.strftime('%d %b %Y, %H:%M')}")
-            except Exception:
-                st.caption(f"Last fetched: {_ts}")
-        else:
-            st.caption("Never fetched")
 
     st.divider()
 
@@ -275,28 +244,66 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     # ── Apply filters ─────────────────────────────────────────────────────────
     df_filtered_ns = df_non_steam_ranked.copy()
 
-    if apply_ns:
-        if 'Release Date' in df_filtered_ns.columns:
-            rel_dates = pd.to_datetime(df_filtered_ns['Release Date'], errors='coerce')
-            in_range = rel_dates.between(pd.Timestamp(ns_start), pd.Timestamp(ns_end))
-            df_filtered_ns = df_filtered_ns[rel_dates.isna() | in_range]
+    if 'Release Date' in df_filtered_ns.columns:
+        rel_dates = pd.to_datetime(df_filtered_ns['Release Date'], errors='coerce')
+        in_range = rel_dates.between(pd.Timestamp(ns_start), pd.Timestamp(ns_end))
+        df_filtered_ns = df_filtered_ns[rel_dates.isna() | in_range]
 
-        if selected_platforms and 'Platforms' in df_filtered_ns.columns:
-            def has_platform(val):
-                plats = val if isinstance(val, list) else [p.strip() for p in str(val).split(',')]
-                return any(p in selected_platforms for p in plats)
-            df_filtered_ns = df_filtered_ns[df_filtered_ns['Platforms'].apply(has_platform)]
+    if selected_platforms and 'Platforms' in df_filtered_ns.columns:
+        def has_platform(val):
+            plats = val if isinstance(val, list) else [p.strip() for p in str(val).split(',')]
+            return any(p in selected_platforms for p in plats)
+        df_filtered_ns = df_filtered_ns[df_filtered_ns['Platforms'].apply(has_platform)]
 
-        if selected_statuses and 'SteamStatus' in df_filtered_ns.columns:
-            df_filtered_ns = df_filtered_ns[df_filtered_ns['SteamStatus'].isin(selected_statuses)]
+    if selected_statuses and 'SteamStatus' in df_filtered_ns.columns:
+        df_filtered_ns = df_filtered_ns[df_filtered_ns['SteamStatus'].isin(selected_statuses)]
 
     df_filtered_ns = df_filtered_ns.reset_index(drop=True)
     df_filtered_ns.index = df_filtered_ns.index + 1
 
     # ── Ranking table ─────────────────────────────────────────────────────────
-    tbl_col, meta_col = st.columns([5, 1])
+    tbl_col, btn_col, meta_col = st.columns([4, 1, 1])
     with tbl_col:
         st.subheader("Priority Rankings")
+    with btn_col:
+        if st.button("📊 Refresh Trends", key="fetch_nonsteam_trends",
+                     help="Fetch Google Trends scores for filtered games", use_container_width=True):
+            games = df_filtered_ns["Game Title"].dropna().unique().tolist()
+            _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
+            games_to_fetch = filter_stale_trends_games(games, _cached_ts)
+            if not games_to_fetch:
+                st.toast("All trends data is fresh (< 24 h)", icon="✅")
+            else:
+                bar = st.progress(0, text="Starting…")
+                _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                for i, game in enumerate(games_to_fetch):
+                    try:
+                        score = calculate_google_trends_points(game)
+                        st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+                    except Exception as e:
+                        st.session_state.nonsteam_trends[game] = 0
+                        st.error(f"Trends fetch failed for '{game}': {e}")
+                    bar.progress((i + 1) / len(games_to_fetch), text=f"{i+1}/{len(games_to_fetch)}: {game}")
+                    try:
+                        pd.DataFrame([
+                            {"game_name": k, "trends_score": v,
+                             "fetched_at": _refresh_ts if k in games_to_fetch else _cached_ts.get(k, _refresh_ts)}
+                            for k, v in st.session_state.nonsteam_trends.items()
+                        ]).to_csv(TRENDS_CACHE_FILE, index=False)
+                    except Exception as e:
+                        st.error(f"Cache write failed: {e}")
+                    time.sleep(1.5)
+                st.session_state.trends_last_fetched_at = _refresh_ts
+                st.toast(f"Updated {len(games_to_fetch)} game(s)", icon="📊")
+        _ts = st.session_state.get("trends_last_fetched_at")
+        if _ts:
+            try:
+                _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
+                st.caption(f"Last fetched: {_dt.strftime('%d %b %Y, %H:%M')}")
+            except Exception:
+                st.caption(f"Last fetched: {_ts}")
+        else:
+            st.caption("Never fetched")
     with meta_col:
         st.caption(f"Showing **{len(df_filtered_ns)}** of **{len(df_non_steam_ranked)}**")
         st.caption(f"Source: *{nonsteam_source_name}*")

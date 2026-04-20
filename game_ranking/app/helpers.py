@@ -10,6 +10,42 @@ from config import get_latest_steam_csv, get_latest_nonsteam_csv
 from calculation.process_data import load_data, clean_dev_genre_list, flagging
 
 
+_TRENDS_TS_FMT = "%Y-%m-%d %H:%M:%S"
+TRENDS_TTL_HOURS = 24
+
+
+def filter_stale_trends_games(games: list, cache_timestamps: dict) -> list:
+    """
+    Return only the games from `games` that are missing from the cache or whose
+    cached timestamp is older than TRENDS_TTL_HOURS. Pass a dict of
+    {game_name: fetched_at_str} built from the trends cache CSV.
+    """
+    cutoff = dt.datetime.now() - dt.timedelta(hours=TRENDS_TTL_HOURS)
+    stale = []
+    for game in games:
+        ts_str = cache_timestamps.get(game)
+        if not ts_str:
+            stale.append(game)
+            continue
+        try:
+            if dt.datetime.strptime(ts_str, _TRENDS_TS_FMT) < cutoff:
+                stale.append(game)
+        except Exception:
+            stale.append(game)
+    return stale
+
+
+def load_trends_cache_timestamps(trends_cache_file) -> dict:
+    """Return {game_name: fetched_at_str} from the trends cache CSV."""
+    try:
+        df = pd.read_csv(trends_cache_file)
+        if "fetched_at" in df.columns and "game_name" in df.columns:
+            return dict(zip(df["game_name"], df["fetched_at"]))
+    except Exception:
+        pass
+    return {}
+
+
 def highlight_new_rows(df: pd.DataFrame):
     """Return a styled dataframe with today's newly appended rows highlighted yellow."""
     today = dt.date.today().isoformat()
