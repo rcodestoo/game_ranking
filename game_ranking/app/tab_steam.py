@@ -178,7 +178,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
     if 'ReleaseDate' in df_filtered_steam.columns:
         rd = pd.to_datetime(df_filtered_steam['ReleaseDate'], errors='coerce', dayfirst=True)
-        df_filtered_steam = df_filtered_steam[rd.between(pd.Timestamp(start_date), pd.Timestamp(end_date))]
+        df_filtered_steam = df_filtered_steam[rd.between(pd.Timestamp(start_date), pd.Timestamp(end_date)) | rd.isna()]
 
     if selected_genres and 'Genres' in df_filtered_steam.columns:
         def has_genre(genres_val):
@@ -198,7 +198,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
     if 'FollowerCount' in df_filtered_steam.columns:
         df_filtered_steam = df_filtered_steam[
-            df_filtered_steam['FollowerCount'].between(0, follower_max)
+            df_filtered_steam['FollowerCount'].fillna(0).between(0, follower_max)
         ]
 
     df_filtered_steam = df_filtered_steam.reset_index(drop=True)
