@@ -18,8 +18,9 @@ from calculation.process_data import load_data, clean_dev_genre_list, flagging, 
 from calculation.steam_players import fetch_player_counts_if_needed, resolve_inventory_appids
 from pipelines.steam_pipeline import append_from_uploaded_steam_csv
 from pipelines.nonsteam_pipeline import append_from_uploaded_nonsteam_csv
+from pipelines.normalizer import prepare_steam_upload, prepare_nonsteam_upload
 from app.helpers import load_defaults, reload_steam_from_csv, reload_nonsteam_from_csv
-from app import tab_steam, tab_nonsteam, tab_inventory
+from app import tab_steam, tab_nonsteam, tab_inventory, tab_tournament
 
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -70,13 +71,18 @@ if uploaded_nonsteam and uploaded_nonsteam.name != st.session_state.uploaded_non
 # Preview and load — Steam
 if st.session_state.uploaded_steam_bytes:
     with st.sidebar.expander("👀 Preview Steam File"):
-        preview_steam = pd.read_csv(io.BytesIO(st.session_state.uploaded_steam_bytes))
+        try:
+            preview_steam, _ = prepare_steam_upload(st.session_state.uploaded_steam_bytes)
+        except Exception:
+            preview_steam = pd.read_csv(io.BytesIO(st.session_state.uploaded_steam_bytes), encoding="latin-1")
         st.dataframe(preview_steam.head(3), width='stretch')
         st.caption(f"Rows: {len(preview_steam)}, Columns: {len(preview_steam.columns)}")
 
     if st.sidebar.button("📥 Load Steam Data", key="load_steam_btn"):
         try:
-            steam_df_upload = pd.read_csv(io.BytesIO(st.session_state.uploaded_steam_bytes))
+            steam_df_upload, steam_warnings = prepare_steam_upload(st.session_state.uploaded_steam_bytes)
+            for w in steam_warnings:
+                st.sidebar.info(w)
             steam_required_cols = ['Name', 'FollowerCount', 'Developers', 'Genres', 'ReleaseDate']
             steam_missing = [col for col in steam_required_cols if col not in steam_df_upload.columns]
             if steam_missing:
@@ -93,13 +99,18 @@ else:
 # Preview and load — Non-Steam
 if st.session_state.uploaded_nonsteam_bytes:
     with st.sidebar.expander("👀 Preview Non-Steam File"):
-        preview_nonsteam = pd.read_csv(io.BytesIO(st.session_state.uploaded_nonsteam_bytes))
+        try:
+            preview_nonsteam, _ = prepare_nonsteam_upload(st.session_state.uploaded_nonsteam_bytes)
+        except Exception:
+            preview_nonsteam = pd.read_csv(io.BytesIO(st.session_state.uploaded_nonsteam_bytes), encoding="latin-1")
         st.dataframe(preview_nonsteam.head(3), width='stretch')
         st.caption(f"Rows: {len(preview_nonsteam)}, Columns: {len(preview_nonsteam.columns)}")
 
     if st.sidebar.button("📥 Load Non-Steam Data", key="load_nonsteam_btn"):
         try:
-            nonsteam_df_upload = pd.read_csv(io.BytesIO(st.session_state.uploaded_nonsteam_bytes))
+            nonsteam_df_upload, nonsteam_warnings = prepare_nonsteam_upload(st.session_state.uploaded_nonsteam_bytes)
+            for w in nonsteam_warnings:
+                st.sidebar.info(w)
             nonsteam_required_cols = ['Game Title', 'Developers', 'SteamStatus', 'YouTube Views']
             nonsteam_missing = [col for col in nonsteam_required_cols if col not in nonsteam_df_upload.columns]
             if nonsteam_missing:
@@ -141,8 +152,10 @@ def _max_date(series: pd.Series) -> dt.date:
 
 _steam_min = _min_date(df_steam.get('ReleaseDate',            pd.Series(dtype=str)))
 _steam_max = _max_date(df_steam.get('ReleaseDate',            pd.Series(dtype=str)))
-_ns_min    = _min_date(df_nonsteam.get('YouTube ReleaseDate', pd.Series(dtype=str)))
-_ns_max    = _max_date(df_nonsteam.get('YouTube ReleaseDate', pd.Series(dtype=str)))
+_ns_min    = min(_min_date(df_nonsteam.get('YouTube ReleaseDate', pd.Series(dtype=str))),
+                 _min_date(df_nonsteam.get('Release Date',        pd.Series(dtype=str))))
+_ns_max    = max(_max_date(df_nonsteam.get('YouTube ReleaseDate', pd.Series(dtype=str))),
+                 _max_date(df_nonsteam.get('Release Date',        pd.Series(dtype=str))))
 _inv_min   = _min_date(
     st.session_state.game_data.get('Date Purchased', pd.Series(dtype=str))
     if 'game_data' in st.session_state else pd.Series(dtype=str)
@@ -197,8 +210,8 @@ if "nonsteam_trends" not in st.session_state:
         st.session_state.trends_last_fetched_at = None
 
 # ── TABS ───────────────────────────────────────────────────────────────────────
-_tab_steam, _tab_nonsteam, _tab_inventory = st.tabs(
-    ["🚀 Steam Report", "📽️ Non-Steam Report", "🎮 Game Inventory"]
+_tab_steam, _tab_nonsteam, _tab_inventory, _tab_tournament = st.tabs(
+    ["🚀 Steam Report", "📽️ Non-Steam Report", "🎮 Game Inventory", "🏆 Trends Tournament"]
 )
 
 with _tab_steam:
@@ -209,3 +222,6 @@ with _tab_nonsteam:
 
 with _tab_inventory:
     tab_inventory.render(GLOBAL_DATE_MIN, GLOBAL_DATE_MAX)
+
+with _tab_tournament:
+    tab_tournament.render()

@@ -126,9 +126,8 @@ def _normalize_release_dates(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize the ReleaseDate column to dd-mm-yyyy format."""
     if "ReleaseDate" not in df.columns:
         return df
-    parsed = pd.to_datetime(df["ReleaseDate"], errors="coerce", dayfirst=True)
-    mask = parsed.notna()
-    df.loc[mask, "ReleaseDate"] = parsed[mask].dt.strftime("%d-%m-%Y")
+    from pipelines.normalizer import _normalize_steam_release_dates
+    df["ReleaseDate"], _ = _normalize_steam_release_dates(df["ReleaseDate"])
     return df
 
 

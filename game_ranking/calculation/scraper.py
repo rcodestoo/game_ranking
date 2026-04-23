@@ -25,7 +25,16 @@ def build_pytrends() -> TrendReq:
         timeout=(10, 30),
         retries=2,
         backoff_factor=0.5,
-        proxies=['https://193.23.194.147:3128'] #, 'http://bfruwyxf:1frbwt481p0o@198.23.239.134:6540']
+        requests_args={
+            "headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                )
+            }
+        },
+        # proxies=['http://193.23.194.147:3128'] #, 'http://bfruwyxf:1frbwt481p0o@198.23.239.134:6540']
     )
 
 

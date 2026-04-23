@@ -526,7 +526,8 @@ def _append_to_raw_nonsteam(log) -> int:
     out_path = RAW_DIR / f"raw_non_steam_{date.today()}.csv"
 
     if source_path.exists():
-        existing_df = pd.read_csv(source_path, encoding='utf-8-sig')
+        from pipelines.normalizer import read_csv_auto_encoding
+        existing_df, _ = read_csv_auto_encoding(source_path.read_bytes())
         existing_df = _normalize_nonsteam_df(existing_df)
 
         existing_names = set(
@@ -583,7 +584,8 @@ def append_from_uploaded_nonsteam_csv(uploaded_df: pd.DataFrame) -> tuple:
     out_path = RAW_DIR / f"raw_non_steam_{date.today()}.csv"
 
     if source_path.exists():
-        existing_df = pd.read_csv(source_path, encoding='utf-8-sig')
+        from pipelines.normalizer import read_csv_auto_encoding
+        existing_df, _ = read_csv_auto_encoding(source_path.read_bytes())
         existing_df = _normalize_nonsteam_df(existing_df)
 
         existing_names = set(existing_df["Game Title"].astype(str).str.strip().str.lower())
