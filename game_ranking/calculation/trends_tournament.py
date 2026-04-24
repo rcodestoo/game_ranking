@@ -17,7 +17,8 @@ import pandas as pd
 from calculation.scraper import build_pytrends, fetch_with_retry, TIMEFRAME, CAT_GAMES
 
 ANCHOR = "Minecraft"        # stable reference term shared across all batches
-GAMES_PER_GROUP = 8         # games per tournament group
+GAMES_PER_GROUP = 8         # games per tournament group (manual tournament in UI)
+TOURNAMENT_GROUP_SIZE = 5   # = pytrends max keywords (auto-tournament, no anchor)
 BATCH_SIZE = 4              # games per pytrends call (4 + anchor = 5, the max)
 CALL_SLEEP = 2.0            # seconds between pytrends calls
 
@@ -52,7 +53,26 @@ def _score_batch(games: list[str], anchor: str, pytrends) -> dict[str, float]:
         return {g: 0.0 for g in games}
 
 
-# ── Mid-level: compare a group of up to GAMES_PER_GROUP games ────────────────
+# ── Mid-level: direct comparison, no anchor (tournament use) ─────────────────
+
+def compare_group_direct(games: list[str], pytrends) -> dict[str, float]:
+    """
+    Compare up to TOURNAMENT_GROUP_SIZE games in a single pytrends call (no anchor).
+    Returns {game: mean_score}. Highest scorer is the winner.
+    """
+    kw_list = games[:TOURNAMENT_GROUP_SIZE]
+    try:
+        df = fetch_with_retry(pytrends, kw_list, timeframe=TIMEFRAME, cat=CAT_GAMES)
+        if df.empty:
+            return {g: 0.0 for g in kw_list}
+        if "isPartial" in df.columns:
+            df = df.drop(columns=["isPartial"])
+        return {g: round(float(df[g].mean()), 2) if g in df.columns else 0.0 for g in kw_list}
+    except Exception:
+        return {g: 0.0 for g in kw_list}
+
+
+# ── Mid-level: compare a group of up to GAMES_PER_GROUP games (anchor-based) ─
 
 def compare_group(
     games: list[str],
@@ -83,24 +103,23 @@ def compare_group(
 
 def run_tournament(
     games: list[str],
-    games_per_group: int = GAMES_PER_GROUP,
-    anchor: str = ANCHOR,
     pytrends=None,
     sleep_s: float = CALL_SLEEP,
     progress_callback=None,
 ) -> list[dict]:
     """
-    Run a multi-round Google Trends tournament.
+    Run a multi-round Google Trends tournament (no anchor).
 
-    Each round: games are split into groups of `games_per_group`; the highest
-    scorer in each group advances. Rounds continue until one champion remains.
+    Each round: games are split into groups of TOURNAMENT_GROUP_SIZE (5); all 5
+    scores share the same baseline within a call so no anchor is needed.
+    The highest scorer in each group advances. Rounds continue until one champion remains.
 
     progress_callback(msg: str) is called before each group comparison so the
     caller can update a progress bar.
 
     Returns a flat list of result dicts:
       game        – game name
-      score       – normalised trends score for this match (None for byes)
+      score       – raw trends score for this match (None for byes)
       round       – round number (1 = first round)
       group       – group number within the round
       eliminated  – True if knocked out in this round
@@ -114,7 +133,7 @@ def run_tournament(
     round_num = 1
 
     while len(pool) > 1:
-        groups = [pool[i:i + games_per_group] for i in range(0, len(pool), games_per_group)]
+        groups = [pool[i:i + TOURNAMENT_GROUP_SIZE] for i in range(0, len(pool), TOURNAMENT_GROUP_SIZE)]
         next_pool: list[str] = []
 
         for g_idx, group in enumerate(groups):
@@ -132,7 +151,7 @@ def run_tournament(
                 preview = ", ".join(group[:3]) + ("…" if len(group) > 3 else "")
                 progress_callback(f"Round {round_num} · Group {g_idx + 1}/{len(groups)}: {preview}")
 
-            scores = compare_group(group, anchor=anchor, pytrends=pytrends, sleep_s=sleep_s)
+            scores = compare_group_direct(group, pytrends=pytrends)
             winner = max(scores, key=scores.get) if scores else group[0]
             next_pool.append(winner)
 

@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 # from app.thread_state import _steam_thread_state  # scraper disabled
+from app.thread_state import _trends_thread_state
 from app.helpers import (highlight_new_rows, reload_steam_from_csv,
                          filter_stale_trends_games, load_trends_cache_timestamps)
 from calculation.process_data import (
@@ -95,6 +96,14 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
     m3.metric("New Today", _new_today, border=True)
     m4.metric("Unknown Devs", _unknown_devs, help="Developers not in the dev list — scored as 1 by default", border=True)
     m5.metric("Trends Cached", _trends_cached, help="Games with a cached Google Trends score", border=True)
+
+    _anchor = st.session_state.get("trends_anchor")
+    if _trends_thread_state["running"]:
+        st.info(f"🔄 {_trends_thread_state.get('progress', 'Trends updating...')}")
+    elif _anchor:
+        st.caption(f"Trends anchor: **{_anchor}**")
+    else:
+        st.caption("No trends anchor yet — upload a CSV to run tournament")
 
     st.divider()
 
@@ -212,8 +221,8 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
         with tbl_col:
             st.subheader("Priority Rankings")
         with btn_col:
-            if st.button("📊 Refresh Trends", key="fetch_steam_trends",
-                         help="Fetch Google Trends scores for filtered games", use_container_width=True):
+            if st.button("📊 Refresh Trends", key="fetch_steam_trends_filter",
+                         help="Fetch trends for all stale games in the current filter", use_container_width=True):
                 games = df_filtered_steam["Name"].dropna().unique().tolist()
                 _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
                 games_to_fetch = filter_stale_trends_games(games, _cached_ts)
@@ -238,9 +247,11 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                             ]).to_csv(TRENDS_CACHE_FILE, index=False)
                         except Exception as e:
                             st.error(f"Cache write failed: {e}")
-                        time.sleep(1.5)
+                        if i < len(games_to_fetch) - 1:
+                            time.sleep(10)
                     st.session_state.trends_last_fetched_at = _refresh_ts
-                    st.toast(f"Updated {len(games_to_fetch)} game(s)", icon="📊")
+                    st.toast(f"Fetched {len(games_to_fetch)} game(s)", icon="📊")
+                    st.rerun()
             _ts = st.session_state.get("trends_last_fetched_at")
             if _ts:
                 try:
@@ -282,11 +293,15 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             'ReleaseDate':          'Release Date',
         })
 
-        st.dataframe(
-            highlight_new_rows(df_display),
+        df_display.insert(0, "Fetch", False)
+        _edited = st.data_editor(
+            df_display,
             use_container_width=True,
+            hide_index=False,
+            disabled=[c for c in df_display.columns if c != "Fetch"],
             column_config={
-                'Follower Score':     st.column_config.NumberColumn(format="%.2f"),
+                'Fetch':             st.column_config.CheckboxColumn("Fetch", default=False),
+                'Follower Score':    st.column_config.NumberColumn(format="%.2f"),
                 'Dev Score':         st.column_config.NumberColumn(format="%.2f"),
                 'Trends Score (raw)':st.column_config.NumberColumn(format="%d"),
                 'Trends Points':     st.column_config.NumberColumn(format="%.2f"),
@@ -294,6 +309,40 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                 'Followers':         st.column_config.NumberColumn(format="%d"),
             },
         )
+
+        _selected = _edited[_edited["Fetch"] == True]["Name"].tolist()
+        _btn_c, _ = st.columns([1, 3])
+        with _btn_c:
+            if st.button(
+                f"📊 Fetch Trends for Selected ({len(_selected)})",
+                key="fetch_steam_trends",
+                disabled=not _selected,
+                use_container_width=True,
+            ):
+                _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
+                bar = st.progress(0, text="Starting…")
+                _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                for i, game in enumerate(_selected):
+                    try:
+                        score = calculate_google_trends_points(game)
+                        st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+                    except Exception as e:
+                        st.session_state.nonsteam_trends[game] = 0
+                        st.error(f"Trends fetch failed for '{game}': {e}")
+                    bar.progress((i + 1) / len(_selected), text=f"{i+1}/{len(_selected)}: {game}")
+                    try:
+                        pd.DataFrame([
+                            {"game_name": k, "trends_score": v,
+                             "fetched_at": _refresh_ts if k in _selected else _cached_ts.get(k, _refresh_ts)}
+                            for k, v in st.session_state.nonsteam_trends.items()
+                        ]).to_csv(TRENDS_CACHE_FILE, index=False)
+                    except Exception as e:
+                        st.error(f"Cache write failed: {e}")
+                    if i < len(_selected) - 1:
+                        time.sleep(10)
+                st.session_state.trends_last_fetched_at = _refresh_ts
+                st.toast(f"Fetched {len(_selected)} game(s)", icon="📊")
+                st.rerun()
 
         with st.expander("📐 How scores are calculated"):
             st.latex(r"Priority Score = (Follower Score \times w_{followers}) + (Dev Score \times w_{dev}) + (Trends Points \times w_{trends})")

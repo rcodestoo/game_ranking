@@ -60,6 +60,17 @@ def highlight_new_rows(df: pd.DataFrame):
     return df
 
 
+def _write_trends_cache(scores: dict, anchor: str):
+    """Write trends scores + anchor to the cache CSV."""
+    from config import TRENDS_CACHE_FILE
+    import datetime as _dt
+    now = _dt.datetime.now().strftime(_TRENDS_TS_FMT)
+    pd.DataFrame([
+        {"game_name": g, "trends_score": s, "fetched_at": now, "anchor": anchor}
+        for g, s in scores.items()
+    ]).to_csv(TRENDS_CACHE_FILE, index=False)
+
+
 def load_defaults():
     """Load default CSV files into session state and clean/flag the Steam DataFrame."""
     df_steam, df_nonsteam, dev_list, genre_list, inventory = load_data(

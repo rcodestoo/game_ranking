@@ -19,7 +19,9 @@ from calculation.steam_players import fetch_player_counts_if_needed, resolve_inv
 from pipelines.steam_pipeline import append_from_uploaded_steam_csv
 from pipelines.nonsteam_pipeline import append_from_uploaded_nonsteam_csv
 from pipelines.normalizer import prepare_steam_upload, prepare_nonsteam_upload
-from app.helpers import load_defaults, reload_steam_from_csv, reload_nonsteam_from_csv
+from app.helpers import load_defaults, reload_steam_from_csv, reload_nonsteam_from_csv, _write_trends_cache
+from app.thread_state import _trends_thread_state
+from pipelines.trends_pipeline import run_trends_pipeline
 from app import tab_steam, tab_nonsteam, tab_inventory, tab_tournament
 
 
@@ -41,6 +43,7 @@ _SESSION_DEFAULTS = {
     "uploaded_nonsteam_name": None,
     # "steam_scraper_log":      [],   # scraper disabled
     # "nonsteam_scraper_log":   [],  # scraper disabled
+    "trends_anchor":           None,
 }
 for _key, _default in _SESSION_DEFAULTS.items():
     if _key not in st.session_state:
@@ -91,6 +94,8 @@ if st.session_state.uploaded_steam_bytes:
                 n_updated, n_new = append_from_uploaded_steam_csv(steam_df_upload)
                 reload_steam_from_csv()
                 st.sidebar.success(f"✅ Saved: {n_new} new, {n_updated} updated")
+                if st.session_state.get("df_steam") is not None and st.session_state.get("df_nonsteam") is not None:
+                    run_trends_pipeline(st.session_state.df_steam, st.session_state.df_nonsteam)
         except Exception as e:
             st.sidebar.error(f"Error loading file: {e}")
 else:
@@ -119,6 +124,8 @@ if st.session_state.uploaded_nonsteam_bytes:
                 n_updated, n_new = append_from_uploaded_nonsteam_csv(nonsteam_df_upload)
                 reload_nonsteam_from_csv()
                 st.sidebar.success(f"✅ Saved: {n_new} new, {n_updated} updated")
+                if st.session_state.get("df_steam") is not None and st.session_state.get("df_nonsteam") is not None:
+                    run_trends_pipeline(st.session_state.df_steam, st.session_state.df_nonsteam)
         except Exception as e:
             st.sidebar.error(f"Error loading file: {e}")
 else:
@@ -205,9 +212,29 @@ if "nonsteam_trends" not in st.session_state:
             st.session_state.trends_last_fetched_at = str(_fetched_vals.iloc[-1]) if len(_fetched_vals) else None
         else:
             st.session_state.trends_last_fetched_at = None
+        if "anchor" in _tc.columns:
+            _anchor_vals = _tc["anchor"].dropna()
+            if len(_anchor_vals):
+                st.session_state.trends_anchor = str(_anchor_vals.iloc[-1])
     else:
         st.session_state.nonsteam_trends = {}
         st.session_state.trends_last_fetched_at = None
+
+# ── Poll background trends pipeline results ───────────────────────────────────
+if _trends_thread_state["result"] is not None:
+    _res = _trends_thread_state["result"]
+    _trends_thread_state["result"] = None
+    if "error" not in _res:
+        st.session_state.nonsteam_trends = _res["scores"]
+        st.session_state.trends_anchor = _res["anchor"]
+        st.session_state.tournament_results_auto = _res["tournament_results"]
+        try:
+            _write_trends_cache(_res["scores"], _res["anchor"])
+        except Exception:
+            pass
+
+if _trends_thread_state["running"]:
+    st.sidebar.info(f"🔄 {_trends_thread_state.get('progress', 'Trends updating...')}")
 
 # ── TABS ───────────────────────────────────────────────────────────────────────
 _tab_steam, _tab_nonsteam, _tab_inventory, _tab_tournament = st.tabs(

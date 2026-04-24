@@ -5,3 +5,9 @@
 _ns_thread_state: dict = {"result": None, "running": False}
 _steam_thread_state: dict = {"result": None, "running": False}
 _ns_verify_thread_state: dict = {"running": False, "result": None, "total": 0, "done": 0}
+
+_trends_thread_state: dict = {
+    "running": False,
+    "result": None,   # {"scores": dict, "anchor": str, "tournament_results": list} | {"error": str}
+    "progress": "",
+}

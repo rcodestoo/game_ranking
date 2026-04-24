@@ -14,6 +14,8 @@ from calculation.trends_tournament import (
     GAMES_PER_GROUP, ANCHOR,
 )
 from calculation.scraper import build_pytrends
+from app.thread_state import _trends_thread_state
+from pipelines.trends_pipeline import run_trends_pipeline
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -79,10 +81,40 @@ def _champion_from_results(results: list[dict]) -> str | None:
 def render():
     st.header("🏆 Trends Tournament")
     st.caption(
-        "Compares games head-to-head using Google Trends (anchor: *Minecraft*). "
-        "Groups of 8 per round — top scorer advances. "
-        "Steam and Non-Steam run separately, then their champions meet in the final."
+        "Compares games head-to-head using Google Trends. "
+        "Auto-tournament: groups of 5 (no anchor) to find the champion, then scores all games vs champion. "
+        "Manual brackets below use groups of 8."
     )
+
+    # ── Auto Trends Tournament ────────────────────────────────────────────────
+    st.subheader("Auto Trends Tournament")
+
+    _anchor = st.session_state.get("trends_anchor")
+    if _anchor:
+        st.success(f"🏆 Current anchor: **{_anchor}**")
+
+    if _trends_thread_state["running"]:
+        st.info(f"🔄 {_trends_thread_state.get('progress', 'Running...')}")
+    else:
+        if st.button("▶ Run Trends Tournament on Current Games", key="auto_trends_run"):
+            df_steam = st.session_state.get("df_steam")
+            df_nonsteam = st.session_state.get("df_nonsteam")
+            if df_steam is not None and df_nonsteam is not None:
+                run_trends_pipeline(df_steam, df_nonsteam)
+                st.rerun()
+            else:
+                st.warning("Load Steam and Non-Steam data first.")
+
+    # Show last auto-run bracket results
+    _auto_results = st.session_state.get("tournament_results_auto")
+    if _auto_results:
+        with st.expander("📋 Last Auto-Run Bracket Results", expanded=False):
+            df_auto = _results_to_df(_auto_results)
+            if not df_auto.empty:
+                st.dataframe(df_auto, use_container_width=True, hide_index=True,
+                             column_config={"Score (norm.)": st.column_config.NumberColumn(format="%.2f")})
+
+    st.divider()
 
     # ── Config ────────────────────────────────────────────────────────────────
     with st.expander("⚙️ Settings", expanded=True):
