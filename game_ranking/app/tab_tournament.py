@@ -13,7 +13,7 @@ from calculation.trends_tournament import (
     run_tournament, run_cross_final,
     GAMES_PER_GROUP, ANCHOR,
 )
-from calculation.scraper import build_pytrends
+from calculation.scraper import get_shared_pytrends
 from app.thread_state import _trends_thread_state
 from pipelines.trends_pipeline import run_trends_pipeline
 
@@ -151,7 +151,7 @@ def render():
             results: list[dict] = []
             pool = list(steam_games)
             round_num = 1
-            pytrends = build_pytrends()
+            pytrends = get_shared_pytrends()
 
             total_groups = sum(
                 max(1, len(pool[i:i + GAMES_PER_GROUP]))
@@ -242,7 +242,7 @@ def render():
             results: list[dict] = []
             pool = list(nonsteam_games)
             round_num = 1
-            pytrends = build_pytrends()
+            pytrends = get_shared_pytrends()
 
             total_groups = sum(
                 max(1, len(pool[i:i + GAMES_PER_GROUP]))
@@ -326,7 +326,7 @@ def render():
         if st.button("▶ Run Grand Final", key="run_grand_final", use_container_width=True):
             st.session_state.pop("tournament_final_result", None)
             with st.spinner(f"Comparing {steam_champ} vs {ns_champ}…"):
-                pytrends = build_pytrends()
+                pytrends = get_shared_pytrends()
                 result = run_cross_final(steam_champ, ns_champ, pytrends=pytrends)
             st.session_state.tournament_final_result = result
             st.rerun()

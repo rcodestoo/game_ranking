@@ -14,7 +14,7 @@ Tournament flow:
 
 import time
 import pandas as pd
-from calculation.scraper import build_pytrends, fetch_with_retry, TIMEFRAME, CAT_GAMES
+from calculation.scraper import get_shared_pytrends, fetch_with_retry, TIMEFRAME, CAT_GAMES
 
 ANCHOR = "Minecraft"        # stable reference term shared across all batches
 GAMES_PER_GROUP = 8         # games per tournament group (manual tournament in UI)
@@ -86,7 +86,7 @@ def compare_group(
     scores are directly comparable. Returns {game: normalised_score}.
     """
     if pytrends is None:
-        pytrends = build_pytrends()
+        pytrends = get_shared_pytrends()
 
     scores: dict[str, float] = {}
     batches = [games[i:i + BATCH_SIZE] for i in range(0, len(games), BATCH_SIZE)]
@@ -126,7 +126,7 @@ def run_tournament(
       champion    – True only for the overall tournament winner
     """
     if pytrends is None:
-        pytrends = build_pytrends()
+        pytrends = get_shared_pytrends()
 
     results: list[dict] = []
     pool = list(games)
@@ -201,7 +201,7 @@ def run_cross_final(
       nonsteam_score   – normalised score
     """
     if pytrends is None:
-        pytrends = build_pytrends()
+        pytrends = get_shared_pytrends()
 
     scores = compare_group(
         [steam_champion, nonsteam_champion],

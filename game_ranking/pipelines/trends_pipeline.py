@@ -7,7 +7,7 @@ import time
 import threading
 
 from calculation.trends_tournament import run_tournament, compare_group, BATCH_SIZE, CALL_SLEEP
-from calculation.scraper import build_pytrends
+from calculation.scraper import get_shared_pytrends
 from app.thread_state import _trends_thread_state
 
 TOURNAMENT_TOP_N = 50   # games per tab fed into tournament (keeps API calls manageable)
@@ -33,7 +33,7 @@ def _top_n(df, score_col, name_col):
 
 def _worker(steam_names, nonsteam_names):
     try:
-        pytrends = build_pytrends()
+        pytrends = get_shared_pytrends()
         pool = list(dict.fromkeys(steam_names + nonsteam_names))   # deduplicated, order preserved
 
         # --- Tournament: groups of 5, no anchor ---
