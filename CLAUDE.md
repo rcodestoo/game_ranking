@@ -35,6 +35,11 @@ repos/
 | `game_ranking/pipelines/steam_pipeline.py` | Gawk-3000 driver; `append_from_uploaded_steam_csv()` |
 | `game_ranking/pipelines/nonsteam_pipeline.py` | SteamCommunityGroupScraper driver; `append_from_uploaded_nonsteam_csv()` |
 | `game_ranking/pipelines/state.py` | Scrape window tracking |
+| `game_ranking/pipelines/normalizer.py` | Encoding-safe CSV reading + per-upload normalization for Steam/Non-Steam |
+| `game_ranking/pipelines/trends_pipeline.py` | Background trends pipeline; runs tournament to find anchor champion, then scores all games |
+| `game_ranking/calculation/single_g_trends_scraper.py` | Standalone pytrends helper (single-game fetch with retry/backoff) |
+| `game_ranking/calculation/trends_tournament.py` | Google Trends tournament engine (anchor-based comparison, groups of 8) |
+| `game_ranking/app/tab_tournament.py` | Trends Tournament tab UI (multi-round bracket + cross-final Steam vs Non-Steam) |
 | `SteamCommunityGroupScraper/script.py` | Non-steam scraper (Selenium + IGDB + YouTube) |
 | `SteamCommunityGroupScraper/games.json` | Input game list (~846 entries) |
 

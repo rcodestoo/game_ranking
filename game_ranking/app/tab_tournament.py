@@ -1,19 +1,20 @@
 """
 Trends Tournament tab.
 
-Runs a multi-round Google Trends tournament for Steam and/or Non-Steam games,
+Runs a multi-round DataForSEO Google Trends tournament for Steam and/or Non-Steam games,
 then compares the two champions in a cross-final.
+All searches are scoped to category 41 (Computer & Video Games), worldwide, past month.
 """
 
-import datetime as dt
+import time
 import pandas as pd
 import streamlit as st
 
 from calculation.trends_tournament import (
-    run_tournament, run_cross_final,
-    GAMES_PER_GROUP, ANCHOR,
+    run_tournament, run_cross_final, compare_group,
+    GAMES_PER_GROUP, ANCHOR, BATCH_SIZE, CALL_SLEEP,
 )
-from calculation.scraper import get_shared_pytrends
+from calculation.dataforseo_trends import load_credentials, save_credentials
 from app.thread_state import _trends_thread_state
 from pipelines.trends_pipeline import run_trends_pipeline
 
@@ -24,12 +25,9 @@ def _get_steam_games(n: int) -> list[str]:
     df = st.session_state.get("df_steam")
     if df is None or df.empty:
         return []
-    col = "Name"
-    if col not in df.columns:
-        return []
     if "priority_score" in df.columns:
         df = df.sort_values("priority_score", ascending=False)
-    return df[col].dropna().astype(str).head(n).tolist()
+    return df["Name"].dropna().astype(str).head(n).tolist() if "Name" in df.columns else []
 
 
 def _get_nonsteam_games(n: int) -> list[str]:
@@ -39,11 +37,10 @@ def _get_nonsteam_games(n: int) -> list[str]:
     col = "Game Title"
     if col not in df.columns:
         return []
-    # Filter same way as the non-steam tab (only ranked games)
     df = df[
         (df.get("SteamStatus", pd.Series(dtype=str)).fillna("Needs Verification") != "PC Game (on Steam)") &
         (df.get("SteamStatus", pd.Series(dtype=str)).fillna("Needs Verification") != "Needs Verification") &
-        (df.get("Category", pd.Series(dtype=str)).str.strip().str.lower() == "main game")
+        (df.get("Category",    pd.Series(dtype=str)).str.strip().str.lower() == "main game")
     ].copy()
     if "priority_score" in df.columns:
         df = df.sort_values("priority_score", ascending=False)
@@ -54,14 +51,14 @@ def _results_to_df(results: list[dict]) -> pd.DataFrame:
     if not results:
         return pd.DataFrame()
     df = pd.DataFrame(results)
-    df = df[~df["score"].isna()].copy()   # drop bye rows from display
+    df = df[~df["score"].isna()].copy()
     df["score"] = df["score"].round(2)
     df["Result"] = df.apply(
         lambda r: "🏆 Champion" if r["champion"] else ("✅ Advanced" if not r["eliminated"] else "❌ Eliminated"),
-        axis=1
+        axis=1,
     )
     return df[["round", "group", "game", "score", "Result"]].rename(columns={
-        "round": "Round", "group": "Group", "game": "Game", "score": "Score (norm.)"
+        "round": "Round", "group": "Group", "game": "Game", "score": "Score",
     })
 
 
@@ -69,11 +66,21 @@ def _champion_from_results(results: list[dict]) -> str | None:
     for r in results:
         if r.get("champion"):
             return r["game"]
-    # Fallback: last non-eliminated game
     for r in reversed(results):
         if not r["eliminated"]:
             return r["game"]
     return None
+
+
+def _get_creds() -> tuple[str, str]:
+    """Return (login, password) from session_state, falling back to file."""
+    login    = st.session_state.get("dfs_login", "")
+    password = st.session_state.get("dfs_password", "")
+    if not login or not password:
+        login, password = load_credentials()
+        st.session_state["dfs_login"]    = login
+        st.session_state["dfs_password"] = password
+    return login, password
 
 
 # ── Main render ───────────────────────────────────────────────────────────────
@@ -81,10 +88,32 @@ def _champion_from_results(results: list[dict]) -> str | None:
 def render():
     st.header("🏆 Trends Tournament")
     st.caption(
-        "Compares games head-to-head using Google Trends. "
-        "Auto-tournament: groups of 5 (no anchor) to find the champion, then scores all games vs champion. "
-        "Manual brackets below use groups of 8."
+        "Compares games head-to-head using Google Trends via DataForSEO. "
+        "Category: Computer & Video Games · Location: Worldwide · Timeframe: past month. "
+        "Groups of 5 per round (Google Trends limit). Highest mean interest advances."
     )
+
+    # ── Credentials ───────────────────────────────────────────────────────────
+    login, password = _get_creds()
+
+    with st.expander("🔑 DataForSEO Credentials", expanded=not bool(login)):
+        c1, c2 = st.columns(2)
+        with c1:
+            new_login = st.text_input("Login (email)", value=login, key="dfs_login_input")
+        with c2:
+            new_pass = st.text_input("Password", value=password, type="password", key="dfs_pass_input")
+        if st.button("Save Credentials", key="save_dfs_creds"):
+            save_credentials(new_login, new_pass)
+            st.session_state["dfs_login"]    = new_login
+            st.session_state["dfs_password"] = new_pass
+            login, password = new_login, new_pass
+            st.success("Credentials saved.")
+
+    if not login or not password:
+        st.warning("Enter DataForSEO credentials above to use the tournament.")
+        return
+
+    st.divider()
 
     # ── Auto Trends Tournament ────────────────────────────────────────────────
     st.subheader("Auto Trends Tournament")
@@ -97,7 +126,7 @@ def render():
         st.info(f"🔄 {_trends_thread_state.get('progress', 'Running...')}")
     else:
         if st.button("▶ Run Trends Tournament on Current Games", key="auto_trends_run"):
-            df_steam = st.session_state.get("df_steam")
+            df_steam    = st.session_state.get("df_steam")
             df_nonsteam = st.session_state.get("df_nonsteam")
             if df_steam is not None and df_nonsteam is not None:
                 run_trends_pipeline(df_steam, df_nonsteam)
@@ -105,14 +134,13 @@ def render():
             else:
                 st.warning("Load Steam and Non-Steam data first.")
 
-    # Show last auto-run bracket results
     _auto_results = st.session_state.get("tournament_results_auto")
     if _auto_results:
         with st.expander("📋 Last Auto-Run Bracket Results", expanded=False):
             df_auto = _results_to_df(_auto_results)
             if not df_auto.empty:
                 st.dataframe(df_auto, use_container_width=True, hide_index=True,
-                             column_config={"Score (norm.)": st.column_config.NumberColumn(format="%.2f")})
+                             column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
 
     st.divider()
 
@@ -122,11 +150,12 @@ def render():
         with c1:
             top_n = st.slider(
                 "Top N games per source", min_value=8, max_value=64, value=16, step=8,
-                help="How many top-ranked games to pull from each tab into the tournament"
+                help="How many top-ranked games to pull from each tab into the tournament",
             )
         with c2:
             st.caption(f"**Groups per round:** {top_n // GAMES_PER_GROUP} (groups of {GAMES_PER_GROUP})")
             st.caption(f"**Anchor term:** {ANCHOR}")
+            st.caption("**Category:** Computer & Video Games (41) · **Location:** Worldwide · **Timeframe:** past month")
 
     st.divider()
 
@@ -151,16 +180,12 @@ def render():
             results: list[dict] = []
             pool = list(steam_games)
             round_num = 1
-            pytrends = get_shared_pytrends()
 
             total_groups = sum(
                 max(1, len(pool[i:i + GAMES_PER_GROUP]))
                 for i in range(0, len(pool), GAMES_PER_GROUP)
             )
             groups_done = 0
-
-            from calculation.trends_tournament import compare_group, CALL_SLEEP
-            import time
 
             while len(pool) > 1:
                 groups = [pool[i:i + GAMES_PER_GROUP] for i in range(0, len(pool), GAMES_PER_GROUP)]
@@ -178,7 +203,7 @@ def render():
                     preview = ", ".join(group[:3]) + ("…" if len(group) > 3 else "")
                     progress_text.caption(f"Round {round_num} · Group {g_idx + 1}/{len(groups)}: {preview}")
 
-                    scores = compare_group(group, pytrends=pytrends, sleep_s=CALL_SLEEP)
+                    scores = compare_group(group, login=login, password=password, sleep_s=CALL_SLEEP)
                     winner = max(scores, key=scores.get) if scores else group[0]
                     next_pool.append(winner)
 
@@ -205,11 +230,10 @@ def render():
             bar.progress(1.0)
             progress_text.empty()
 
-            st.session_state.tournament_steam_results = results
+            st.session_state.tournament_steam_results  = results
             st.session_state.tournament_steam_champion = _champion_from_results(results)
             st.rerun()
 
-    # Display Steam results
     if "tournament_steam_results" in st.session_state:
         champ = st.session_state.get("tournament_steam_champion")
         if champ:
@@ -217,7 +241,7 @@ def render():
         df_res = _results_to_df(st.session_state.tournament_steam_results)
         if not df_res.empty:
             st.dataframe(df_res, use_container_width=True, hide_index=True,
-                         column_config={"Score (norm.)": st.column_config.NumberColumn(format="%.2f")})
+                         column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
 
     st.divider()
 
@@ -242,16 +266,12 @@ def render():
             results: list[dict] = []
             pool = list(nonsteam_games)
             round_num = 1
-            pytrends = get_shared_pytrends()
 
             total_groups = sum(
                 max(1, len(pool[i:i + GAMES_PER_GROUP]))
                 for i in range(0, len(pool), GAMES_PER_GROUP)
             )
             groups_done = 0
-
-            from calculation.trends_tournament import compare_group, CALL_SLEEP
-            import time
 
             while len(pool) > 1:
                 groups = [pool[i:i + GAMES_PER_GROUP] for i in range(0, len(pool), GAMES_PER_GROUP)]
@@ -269,7 +289,7 @@ def render():
                     preview = ", ".join(group[:3]) + ("…" if len(group) > 3 else "")
                     progress_text.caption(f"Round {round_num} · Group {g_idx + 1}/{len(groups)}: {preview}")
 
-                    scores = compare_group(group, pytrends=pytrends, sleep_s=CALL_SLEEP)
+                    scores = compare_group(group, login=login, password=password, sleep_s=CALL_SLEEP)
                     winner = max(scores, key=scores.get) if scores else group[0]
                     next_pool.append(winner)
 
@@ -296,11 +316,10 @@ def render():
             bar.progress(1.0)
             progress_text.empty()
 
-            st.session_state.tournament_nonsteam_results = results
+            st.session_state.tournament_nonsteam_results  = results
             st.session_state.tournament_nonsteam_champion = _champion_from_results(results)
             st.rerun()
 
-    # Display Non-Steam results
     if "tournament_nonsteam_results" in st.session_state:
         champ = st.session_state.get("tournament_nonsteam_champion")
         if champ:
@@ -308,7 +327,7 @@ def render():
         df_res = _results_to_df(st.session_state.tournament_nonsteam_results)
         if not df_res.empty:
             st.dataframe(df_res, use_container_width=True, hide_index=True,
-                         column_config={"Score (norm.)": st.column_config.NumberColumn(format="%.2f")})
+                         column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
 
     st.divider()
 
@@ -316,7 +335,7 @@ def render():
     st.subheader("⚡ Grand Final")
 
     steam_champ = st.session_state.get("tournament_steam_champion")
-    ns_champ = st.session_state.get("tournament_nonsteam_champion")
+    ns_champ    = st.session_state.get("tournament_nonsteam_champion")
 
     if not steam_champ or not ns_champ:
         st.info("Run both the Steam and Non-Steam tournaments first to unlock the Grand Final.")
@@ -326,13 +345,12 @@ def render():
         if st.button("▶ Run Grand Final", key="run_grand_final", use_container_width=True):
             st.session_state.pop("tournament_final_result", None)
             with st.spinner(f"Comparing {steam_champ} vs {ns_champ}…"):
-                pytrends = get_shared_pytrends()
-                result = run_cross_final(steam_champ, ns_champ, pytrends=pytrends)
+                result = run_cross_final(steam_champ, ns_champ, login=login, password=password)
             st.session_state.tournament_final_result = result
             st.rerun()
 
     if "tournament_final_result" in st.session_state:
-        res = st.session_state.tournament_final_result
+        res    = st.session_state.tournament_final_result
         winner = res["winner"]
         st.balloons()
         st.success(f"🥇 Overall Winner: **{winner}**")

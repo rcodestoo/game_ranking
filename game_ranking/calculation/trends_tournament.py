@@ -1,98 +1,71 @@
 """
-Google Trends tournament engine.
+Google Trends tournament engine — powered by DataForSEO.
 
-Uses pytrends anchor-based comparison to rank games relative to each other.
-pytrends caps comparisons at 5 keywords per request; we use batches of 4 games
-+ 1 fixed anchor so all batches share a common scale.
+Compares games head-to-head using DataForSEO's Google Trends API
+(category 41 = Computer & Video Games, worldwide, past month).
+Up to 5 keywords per request (Google Trends hard limit).
 
 Tournament flow:
-  1. Split games into groups of `games_per_group` (default 8).
-  2. Within each group, run anchor-based comparison → top scorer advances.
+  1. Split games into groups of TOURNAMENT_GROUP_SIZE (5).
+  2. Within each group, call DataForSEO → highest mean score advances.
   3. Repeat until one game remains (the champion).
-  4. Optional cross-final: Steam champion vs Non-Steam champion.
+  4. Optional anchor-based scoring: all games vs champion, 4 games + anchor per batch.
+  5. Optional cross-final: Steam champion vs Non-Steam champion.
 """
 
 import time
-import pandas as pd
-from calculation.scraper import get_shared_pytrends, fetch_with_retry, TIMEFRAME, CAT_GAMES
+import logging
 
-ANCHOR = "Minecraft"        # stable reference term shared across all batches
-GAMES_PER_GROUP = 8         # games per tournament group (manual tournament in UI)
-TOURNAMENT_GROUP_SIZE = 5   # = pytrends max keywords (auto-tournament, no anchor)
-BATCH_SIZE = 4              # games per pytrends call (4 + anchor = 5, the max)
-CALL_SLEEP = 2.0            # seconds between pytrends calls
+from calculation.dataforseo_trends import fetch_comparison, GAMES_CATEGORY
+
+log = logging.getLogger(__name__)
+
+ANCHOR               = "Minecraft"   # stable reference for anchor-based scoring
+GAMES_PER_GROUP      = 8            # games per manual tournament group (UI brackets)
+TOURNAMENT_GROUP_SIZE = 5           # games per auto-tournament group (= DataForSEO max)
+BATCH_SIZE           = 4            # games per anchor-scoring batch (4 + anchor = 5)
+CALL_SLEEP           = 2.0          # seconds between API calls
 
 
-# ── Low-level: single pytrends call ──────────────────────────────────────────
+# ── Low-level: single batch, no anchor ───────────────────────────────────────
 
-def _score_batch(games: list[str], anchor: str, pytrends) -> dict[str, float]:
+def compare_group_direct(
+    games: list[str],
+    login: str,
+    password: str,
+    category_code: int = GAMES_CATEGORY,
+) -> dict[str, float]:
     """
-    Call pytrends with `games` + `anchor` and return mean interest for each game,
-    normalised so that anchor = 100. Returns {game: score}, score = 0 on failure.
+    Compare up to TOURNAMENT_GROUP_SIZE games in a single DataForSEO call.
+    Returns {game: mean_score}. Highest scorer wins.
     """
-    kw_list = games + [anchor]
-    try:
-        df = fetch_with_retry(pytrends, kw_list, timeframe=TIMEFRAME, cat=CAT_GAMES)
-        if df.empty:
-            return {g: 0.0 for g in games}
-        if "isPartial" in df.columns:
-            df = df.drop(columns=["isPartial"])
-
-        anchor_mean = float(df[anchor].mean()) if anchor in df.columns else 1.0
-        if anchor_mean == 0:
-            anchor_mean = 1.0
-
-        result = {}
-        for game in games:
-            if game in df.columns:
-                result[game] = round(float(df[game].mean()) / anchor_mean * 100, 2)
-            else:
-                result[game] = 0.0
-        return result
-    except Exception:
-        return {g: 0.0 for g in games}
+    return fetch_comparison(games[:TOURNAMENT_GROUP_SIZE], login, password, category_code)
 
 
-# ── Mid-level: direct comparison, no anchor (tournament use) ─────────────────
-
-def compare_group_direct(games: list[str], pytrends) -> dict[str, float]:
-    """
-    Compare up to TOURNAMENT_GROUP_SIZE games in a single pytrends call (no anchor).
-    Returns {game: mean_score}. Highest scorer is the winner.
-    """
-    kw_list = games[:TOURNAMENT_GROUP_SIZE]
-    try:
-        df = fetch_with_retry(pytrends, kw_list, timeframe=TIMEFRAME, cat=CAT_GAMES)
-        if df.empty:
-            return {g: 0.0 for g in kw_list}
-        if "isPartial" in df.columns:
-            df = df.drop(columns=["isPartial"])
-        return {g: round(float(df[g].mean()), 2) if g in df.columns else 0.0 for g in kw_list}
-    except Exception:
-        return {g: 0.0 for g in kw_list}
-
-
-# ── Mid-level: compare a group of up to GAMES_PER_GROUP games (anchor-based) ─
+# ── Mid-level: anchor-based, multiple batches ─────────────────────────────────
 
 def compare_group(
     games: list[str],
+    login: str,
+    password: str,
     anchor: str = ANCHOR,
-    pytrends=None,
+    category_code: int = GAMES_CATEGORY,
     sleep_s: float = CALL_SLEEP,
 ) -> dict[str, float]:
     """
     Compare up to GAMES_PER_GROUP games using anchor-based normalisation.
-    Splits into batches of BATCH_SIZE; all batches share the same anchor so
-    scores are directly comparable. Returns {game: normalised_score}.
+    Splits into batches of BATCH_SIZE (4 games + anchor = 5 per call).
+    All batches share the same anchor so scores are directly comparable.
+    Returns {game: normalised_score} where anchor = 100.
     """
-    if pytrends is None:
-        pytrends = get_shared_pytrends()
-
     scores: dict[str, float] = {}
     batches = [games[i:i + BATCH_SIZE] for i in range(0, len(games), BATCH_SIZE)]
 
     for i, batch in enumerate(batches):
-        scores.update(_score_batch(batch, anchor, pytrends))
+        raw = fetch_comparison(batch + [anchor], login, password, category_code)
+        anchor_val = raw.get(anchor, 1.0) or 1.0
+        for g in batch:
+            scores[g] = round(raw.get(g, 0.0) / anchor_val * 100, 2)
         if i < len(batches) - 1:
             time.sleep(sleep_s)
 
@@ -103,31 +76,29 @@ def compare_group(
 
 def run_tournament(
     games: list[str],
-    pytrends=None,
+    login: str,
+    password: str,
+    category_code: int = GAMES_CATEGORY,
     sleep_s: float = CALL_SLEEP,
     progress_callback=None,
 ) -> list[dict]:
     """
-    Run a multi-round Google Trends tournament (no anchor).
+    Run a multi-round DataForSEO Trends tournament.
 
-    Each round: games are split into groups of TOURNAMENT_GROUP_SIZE (5); all 5
-    scores share the same baseline within a call so no anchor is needed.
-    The highest scorer in each group advances. Rounds continue until one champion remains.
+    Each round: games split into groups of TOURNAMENT_GROUP_SIZE (5).
+    Highest scorer in each group advances. Rounds continue until one champion remains.
+    Single-game groups get an automatic bye.
 
-    progress_callback(msg: str) is called before each group comparison so the
-    caller can update a progress bar.
+    progress_callback(msg: str) is called before each group comparison.
 
     Returns a flat list of result dicts:
       game        – game name
-      score       – raw trends score for this match (None for byes)
+      score       – mean trends score for this match (None for byes)
       round       – round number (1 = first round)
       group       – group number within the round
       eliminated  – True if knocked out in this round
       champion    – True only for the overall tournament winner
     """
-    if pytrends is None:
-        pytrends = get_shared_pytrends()
-
     results: list[dict] = []
     pool = list(games)
     round_num = 1
@@ -137,7 +108,6 @@ def run_tournament(
         next_pool: list[str] = []
 
         for g_idx, group in enumerate(groups):
-            # Single-game group → automatic bye
             if len(group) == 1:
                 results.append({
                     "game": group[0], "score": None,
@@ -151,18 +121,18 @@ def run_tournament(
                 preview = ", ".join(group[:3]) + ("…" if len(group) > 3 else "")
                 progress_callback(f"Round {round_num} · Group {g_idx + 1}/{len(groups)}: {preview}")
 
-            scores = compare_group_direct(group, pytrends=pytrends)
+            scores = compare_group_direct(group, login, password, category_code)
             winner = max(scores, key=scores.get) if scores else group[0]
             next_pool.append(winner)
 
             for game in group:
                 results.append({
-                    "game": game,
-                    "score": scores.get(game, 0.0),
-                    "round": round_num,
-                    "group": g_idx + 1,
+                    "game":      game,
+                    "score":     scores.get(game, 0.0),
+                    "round":     round_num,
+                    "group":     g_idx + 1,
                     "eliminated": game != winner,
-                    "champion": False,
+                    "champion":  False,
                 })
 
             if g_idx < len(groups) - 1:
@@ -171,10 +141,8 @@ def run_tournament(
         pool = next_pool
         round_num += 1
 
-    # Mark champion
     if pool:
         champion = pool[0]
-        # Find the last result entry for the champion and flag it
         for r in reversed(results):
             if r["game"] == champion and not r["eliminated"]:
                 r["champion"] = True
@@ -188,32 +156,35 @@ def run_tournament(
 def run_cross_final(
     steam_champion: str,
     nonsteam_champion: str,
+    login: str,
+    password: str,
     anchor: str = ANCHOR,
-    pytrends=None,
+    category_code: int = GAMES_CATEGORY,
 ) -> dict:
     """
-    Direct comparison between the Steam and Non-Steam tournament winners.
-    Returns:
-      winner           – name of the overall winner
-      steam_champion   – Steam entrant
-      nonsteam_champion – Non-Steam entrant
-      steam_score      – normalised score
-      nonsteam_score   – normalised score
-    """
-    if pytrends is None:
-        pytrends = get_shared_pytrends()
+    Direct comparison between the Steam and Non-Steam tournament winners
+    using anchor-based normalisation for a fair cross-comparison.
 
+    Returns:
+      winner            – name of the overall winner
+      steam_champion    – Steam entrant
+      nonsteam_champion – Non-Steam entrant
+      steam_score       – normalised score
+      nonsteam_score    – normalised score
+    """
     scores = compare_group(
         [steam_champion, nonsteam_champion],
+        login=login,
+        password=password,
         anchor=anchor,
-        pytrends=pytrends,
+        category_code=category_code,
     )
-    s = scores.get(steam_champion, 0.0)
+    s  = scores.get(steam_champion, 0.0)
     ns = scores.get(nonsteam_champion, 0.0)
     return {
-        "winner": steam_champion if s >= ns else nonsteam_champion,
-        "steam_champion": steam_champion,
+        "winner":            steam_champion if s >= ns else nonsteam_champion,
+        "steam_champion":    steam_champion,
         "nonsteam_champion": nonsteam_champion,
-        "steam_score": s,
-        "nonsteam_score": ns,
+        "steam_score":       s,
+        "nonsteam_score":    ns,
     }

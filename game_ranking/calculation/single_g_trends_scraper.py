@@ -18,14 +18,27 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def build_pytrends() -> TrendReq:
-    return TrendReq(
+def build_pytrends(proxy: str | None = None) -> TrendReq:
+    kwargs: dict = dict(
         hl="en-US",
         tz=0,
         timeout=(10, 30),
         retries=2,
         backoff_factor=0.5,
+        requests_args={
+            "headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                )
+            }
+        },
     )
+    if proxy:
+        kwargs["proxies"] = [proxy]
+        log.info("pytrends session using proxy: %s", proxy)
+    return TrendReq(**kwargs)
 
 
 def fetch_with_retry(pytrends: TrendReq, keywords: list[str], timeframe: str = TIMEFRAME, cat: int = 0) -> pd.DataFrame:
@@ -49,8 +62,10 @@ def fetch_with_retry(pytrends: TrendReq, keywords: list[str], timeframe: str = T
 
 
 if __name__ == "__main__":
+    import sys
     keyword = input("Enter game keyword: ").strip()
-    pytrends = build_pytrends()
+    proxy_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    pytrends = build_pytrends(proxy=proxy_arg)
     df = fetch_with_retry(pytrends, [keyword], timeframe=TIMEFRAME, cat=CAT_GAMES)
     if df.empty:
         print("No data returned.")
