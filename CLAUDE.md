@@ -31,7 +31,8 @@ repos/
 | `game_ranking/config.py` | Centralized path constants; `get_latest_steam_csv()`, `get_latest_nonsteam_csv()` |
 | `game_ranking/calculation/process_data.py` | Scoring logic + `populate_appids()` |
 | `game_ranking/calculation/steam_players.py` | SteamSpy + Steam API + AppID cache |
-| `game_ranking/calculation/scraper.py` | pytrends wrapper |
+| `game_ranking/calculation/scraper.py` | Legacy pytrends wrapper (rate-limit protected, shared session) |
+| `game_ranking/calculation/dataforseo_trends.py` | DataForSEO Google Trends client (category 41, worldwide, past 30 days, max 5 keywords/request, HTTP Basic auth) |
 | `game_ranking/pipelines/steam_pipeline.py` | Gawk-3000 driver; `append_from_uploaded_steam_csv()` |
 | `game_ranking/pipelines/nonsteam_pipeline.py` | SteamCommunityGroupScraper driver; `append_from_uploaded_nonsteam_csv()` |
 | `game_ranking/pipelines/state.py` | Scrape window tracking |
@@ -51,7 +52,8 @@ repos/
 game_ranking/raw/     — Raw CSVs (see schema below)
 game_ranking/data/    — Excel files + inventory CSV
 game_ranking/cache/   — nonsteam_trends_cache.csv, steam_appid_cache.json,
-                        player_counts_history.csv, steamspy_cache.csv, scraper_state.json
+                        player_counts_history.csv, steamspy_cache.csv, scraper_state.json,
+                        dataforseo_creds.json
 ```
 
 ---
@@ -75,8 +77,8 @@ date_appended
 **Minimum required for upload (validated in sidebar):**
 `Name, FollowerCount, Developers, Genres, ReleaseDate`
 
-**Latest new raw file (as of 2026-04-23):**
-`steam_export_full_combined_filtered_23_4.csv` — 151 rows, Gawk-3000 export
+**Latest raw file (as of 2026-05-10):**
+`raw_steam_2026-05-10.csv` — 125 rows
 
 ### Non-Steam (`raw_non_steam.csv` / `raw_non_steam_YYYY-MM-DD.csv`)
 
@@ -96,8 +98,8 @@ SteamStatus, date_appended
 **Minimum required for upload (validated in sidebar):**
 `Game Title, Developers, SteamStatus, YouTube Views`
 
-**Latest new raw file (as of 2026-04-23):**
-`Categorized_Game_List_2026-04-15_to_2026-05-16.csv` — 553 rows, covers 2026-04-15 to 2026-05-16
+**Latest raw file (as of 2026-05-10):**
+`raw_non_steam_2026-05-10.csv` — 586 rows
 
 ---
 
@@ -111,6 +113,8 @@ SteamStatus, date_appended
 - Deduplication key: **AppId** for Steam, **Game Title** (case-insensitive) for Non-Steam
 - On upload, existing rows with matching key are **overwritten**; new rows are **appended**
 - Output always written to a date-stamped file (`raw_steam_YYYY-MM-DD.csv`)
+- **Trends backend**: `trends_pipeline.py` now uses DataForSEO (`dataforseo_trends.py`); pytrends files (`scraper.py`, `single_g_trends_scraper.py`) are legacy
+- DataForSEO credentials stored in `cache/dataforseo_creds.json` (login + password, HTTP Basic auth)
 
 ---
 

@@ -21,16 +21,19 @@ from pipelines.trends_pipeline import run_trends_pipeline
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_steam_games(n: int) -> list[str]:
+def _get_steam_games(n: int | None = None) -> list[str]:
     df = st.session_state.get("df_steam")
     if df is None or df.empty:
         return []
     if "priority_score" in df.columns:
         df = df.sort_values("priority_score", ascending=False)
-    return df["Name"].dropna().astype(str).head(n).tolist() if "Name" in df.columns else []
+    if "Name" not in df.columns:
+        return []
+    series = df["Name"].dropna().astype(str)
+    return series.tolist() if n is None else series.head(n).tolist()
 
 
-def _get_nonsteam_games(n: int) -> list[str]:
+def _get_nonsteam_games(n: int | None = None) -> list[str]:
     df = st.session_state.get("df_nonsteam")
     if df is None or df.empty:
         return []
@@ -44,7 +47,8 @@ def _get_nonsteam_games(n: int) -> list[str]:
     ].copy()
     if "priority_score" in df.columns:
         df = df.sort_values("priority_score", ascending=False)
-    return df[col].dropna().astype(str).head(n).tolist()
+    series = df[col].dropna().astype(str)
+    return series.tolist() if n is None else series.head(n).tolist()
 
 
 def _results_to_df(results: list[dict]) -> pd.DataFrame:
@@ -148,12 +152,16 @@ def render():
     with st.expander("⚙️ Settings", expanded=True):
         c1, c2 = st.columns(2)
         with c1:
-            top_n = st.slider(
-                "Top N games per source", min_value=8, max_value=64, value=16, step=8,
-                help="How many top-ranked games to pull from each tab into the tournament",
+            limit_games = st.checkbox(
+                "Limit to top N games per source", value=False,
+                help="By default all games are entered. Check to restrict to the top N by priority score.",
             )
+            top_n = None
+            if limit_games:
+                top_n = st.slider(
+                    "Top N games per source", min_value=8, max_value=256, value=32, step=8,
+                )
         with c2:
-            st.caption(f"**Groups per round:** {top_n // GAMES_PER_GROUP} (groups of {GAMES_PER_GROUP})")
             st.caption(f"**Anchor term:** {ANCHOR}")
             st.caption("**Category:** Computer & Video Games (41) · **Location:** Worldwide · **Timeframe:** past month")
 

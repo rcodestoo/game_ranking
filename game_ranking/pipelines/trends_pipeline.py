@@ -11,9 +11,6 @@ from calculation.trends_tournament import run_tournament, compare_group, BATCH_S
 from calculation.dataforseo_trends import load_credentials
 from app.thread_state import _trends_thread_state
 
-TOURNAMENT_TOP_N = 50   # games per tab fed into tournament (keeps API calls manageable)
-
-
 def run_trends_pipeline(steam_df, nonsteam_df):
     """Spawn background thread. Called after CSV load or manually from the tournament tab."""
     if _trends_thread_state["running"]:
@@ -24,8 +21,8 @@ def run_trends_pipeline(steam_df, nonsteam_df):
         _trends_thread_state["result"] = {"error": "DataForSEO credentials not configured."}
         return
 
-    steam_names    = _top_n(steam_df,    "Final Priority Score", "Name")
-    nonsteam_names = _top_n(nonsteam_df, "priority_score",       "Game Title")
+    steam_names    = _all_games(steam_df,    "Final Priority Score", "Name")
+    nonsteam_names = _all_games(nonsteam_df, "priority_score",       "Game Title")
     _trends_thread_state.update({"running": True, "result": None, "progress": "Starting..."})
     threading.Thread(
         target=_worker,
@@ -34,12 +31,12 @@ def run_trends_pipeline(steam_df, nonsteam_df):
     ).start()
 
 
-def _top_n(df, score_col, name_col):
+def _all_games(df, score_col, name_col):
     if df is None or name_col not in df.columns:
         return []
     if score_col in df.columns:
         df = df.sort_values(score_col, ascending=False)
-    return list(df[name_col].dropna().unique()[:TOURNAMENT_TOP_N])
+    return list(df[name_col].dropna().unique())
 
 
 def _worker(steam_names, nonsteam_names, login, password):
