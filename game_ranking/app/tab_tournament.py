@@ -7,6 +7,7 @@ All searches are scoped to category 41 (Computer & Video Games), worldwide, past
 """
 
 import math
+import time
 import pandas as pd
 import streamlit as st
 
@@ -136,6 +137,8 @@ def render():
 
     if _trends_thread_state["running"]:
         st.info(f"🔄 {_trends_thread_state.get('progress', 'Running...')}")
+        time.sleep(3)
+        st.rerun()
     else:
         if st.button("▶ Run Trends Tournament on Current Games", key="auto_trends_run"):
             df_steam    = st.session_state.get("df_steam")
