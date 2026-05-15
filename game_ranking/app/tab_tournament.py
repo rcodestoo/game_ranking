@@ -6,13 +6,12 @@ then compares the two champions in a cross-final.
 All searches are scoped to category 41 (Computer & Video Games), worldwide, past month.
 """
 
-import time
+import math
 import pandas as pd
 import streamlit as st
 
 from calculation.trends_tournament import (
-    run_tournament, run_cross_final, compare_group,
-    GAMES_PER_GROUP, ANCHOR, BATCH_SIZE, CALL_SLEEP,
+    run_tournament, run_cross_final, ANCHOR, TOURNAMENT_GROUP_SIZE,
 )
 from calculation.dataforseo_trends import load_credentials, save_credentials
 from app.thread_state import _trends_thread_state
@@ -64,6 +63,15 @@ def _results_to_df(results: list[dict]) -> pd.DataFrame:
     return df[["round", "group", "game", "score", "Result"]].rename(columns={
         "round": "Round", "group": "Group", "game": "Game", "score": "Score",
     })
+
+
+def _estimate_total_groups(n: int, group_size: int = TOURNAMENT_GROUP_SIZE) -> int:
+    total, pool = 0, n
+    while pool > 1:
+        g = math.ceil(pool / group_size)
+        total += g
+        pool = g
+    return max(total, 1)
 
 
 def _champion_from_results(results: list[dict]) -> str | None:
@@ -184,56 +192,18 @@ def render():
 
             progress_text = st.empty()
             bar = st.progress(0)
+            total_groups = _estimate_total_groups(len(steam_games))
+            groups_done = [0]
 
-            results: list[dict] = []
-            pool = list(steam_games)
-            round_num = 1
+            def _steam_progress(msg: str):
+                groups_done[0] += 1
+                bar.progress(min(groups_done[0] / total_groups, 0.99))
+                progress_text.caption(msg)
 
-            total_groups = sum(
-                max(1, len(pool[i:i + GAMES_PER_GROUP]))
-                for i in range(0, len(pool), GAMES_PER_GROUP)
+            results = run_tournament(
+                steam_games, login=login, password=password,
+                progress_callback=_steam_progress,
             )
-            groups_done = 0
-
-            while len(pool) > 1:
-                groups = [pool[i:i + GAMES_PER_GROUP] for i in range(0, len(pool), GAMES_PER_GROUP)]
-                next_pool: list[str] = []
-
-                for g_idx, group in enumerate(groups):
-                    if len(group) == 1:
-                        results.append({"game": group[0], "score": None, "round": round_num,
-                                        "group": g_idx + 1, "eliminated": False, "champion": False})
-                        next_pool.append(group[0])
-                        groups_done += 1
-                        bar.progress(min(groups_done / max(total_groups, 1), 0.99))
-                        continue
-
-                    preview = ", ".join(group[:3]) + ("…" if len(group) > 3 else "")
-                    progress_text.caption(f"Round {round_num} · Group {g_idx + 1}/{len(groups)}: {preview}")
-
-                    scores = compare_group(group, login=login, password=password, sleep_s=CALL_SLEEP)
-                    winner = max(scores, key=scores.get) if scores else group[0]
-                    next_pool.append(winner)
-
-                    for game in group:
-                        results.append({"game": game, "score": scores.get(game, 0.0),
-                                        "round": round_num, "group": g_idx + 1,
-                                        "eliminated": game != winner, "champion": False})
-
-                    groups_done += 1
-                    bar.progress(min(groups_done / max(total_groups, 1), 0.99))
-                    if g_idx < len(groups) - 1:
-                        time.sleep(CALL_SLEEP)
-
-                pool = next_pool
-                round_num += 1
-
-            if pool:
-                champion = pool[0]
-                for r in reversed(results):
-                    if r["game"] == champion and not r["eliminated"]:
-                        r["champion"] = True
-                        break
 
             bar.progress(1.0)
             progress_text.empty()
@@ -270,56 +240,18 @@ def render():
 
             progress_text = st.empty()
             bar = st.progress(0)
+            total_groups = _estimate_total_groups(len(nonsteam_games))
+            groups_done = [0]
 
-            results: list[dict] = []
-            pool = list(nonsteam_games)
-            round_num = 1
+            def _nonsteam_progress(msg: str):
+                groups_done[0] += 1
+                bar.progress(min(groups_done[0] / total_groups, 0.99))
+                progress_text.caption(msg)
 
-            total_groups = sum(
-                max(1, len(pool[i:i + GAMES_PER_GROUP]))
-                for i in range(0, len(pool), GAMES_PER_GROUP)
+            results = run_tournament(
+                nonsteam_games, login=login, password=password,
+                progress_callback=_nonsteam_progress,
             )
-            groups_done = 0
-
-            while len(pool) > 1:
-                groups = [pool[i:i + GAMES_PER_GROUP] for i in range(0, len(pool), GAMES_PER_GROUP)]
-                next_pool: list[str] = []
-
-                for g_idx, group in enumerate(groups):
-                    if len(group) == 1:
-                        results.append({"game": group[0], "score": None, "round": round_num,
-                                        "group": g_idx + 1, "eliminated": False, "champion": False})
-                        next_pool.append(group[0])
-                        groups_done += 1
-                        bar.progress(min(groups_done / max(total_groups, 1), 0.99))
-                        continue
-
-                    preview = ", ".join(group[:3]) + ("…" if len(group) > 3 else "")
-                    progress_text.caption(f"Round {round_num} · Group {g_idx + 1}/{len(groups)}: {preview}")
-
-                    scores = compare_group(group, login=login, password=password, sleep_s=CALL_SLEEP)
-                    winner = max(scores, key=scores.get) if scores else group[0]
-                    next_pool.append(winner)
-
-                    for game in group:
-                        results.append({"game": game, "score": scores.get(game, 0.0),
-                                        "round": round_num, "group": g_idx + 1,
-                                        "eliminated": game != winner, "champion": False})
-
-                    groups_done += 1
-                    bar.progress(min(groups_done / max(total_groups, 1), 0.99))
-                    if g_idx < len(groups) - 1:
-                        time.sleep(CALL_SLEEP)
-
-                pool = next_pool
-                round_num += 1
-
-            if pool:
-                champion = pool[0]
-                for r in reversed(results):
-                    if r["game"] == champion and not r["eliminated"]:
-                        r["champion"] = True
-                        break
 
             bar.progress(1.0)
             progress_text.empty()
