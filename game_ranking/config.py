@@ -10,8 +10,10 @@ CSV_NON_STEAM    = RAW_DIR  / 'raw_non_steam.csv'
 DEV_LIST         = DATA_DIR / 'developer_list.xlsx'
 GENRE_LIST       = DATA_DIR / 'genre_list.xlsx'
 INVENTORY_FILE   = DATA_DIR / 'team_reviews_game_inventory.csv'
-TRENDS_CACHE_FILE   = CACHE_DIR / 'nonsteam_trends_cache.csv'
-STEAMSPY_CACHE_FILE = CACHE_DIR / 'steamspy_cache.csv'
+TRENDS_CACHE_FILE        = CACHE_DIR / 'nonsteam_trends_cache.csv'
+INVENTORY_TRENDS_HISTORY_FILE = CACHE_DIR / 'inventory_trends_history.csv'
+STEAMSPY_CACHE_FILE      = CACHE_DIR / 'steamspy_cache.csv'
+TOURNAMENT_ANCHOR_FILE   = CACHE_DIR / 'tournament_anchor.json'
 
 
 def get_latest_steam_csv() -> "Path":

@@ -31,14 +31,12 @@ repos/
 | `game_ranking/config.py` | Centralized path constants; `get_latest_steam_csv()`, `get_latest_nonsteam_csv()` |
 | `game_ranking/calculation/process_data.py` | Scoring logic + `populate_appids()` |
 | `game_ranking/calculation/steam_players.py` | SteamSpy + Steam API + AppID cache |
-| `game_ranking/calculation/scraper.py` | Legacy pytrends wrapper (rate-limit protected, shared session) |
 | `game_ranking/calculation/dataforseo_trends.py` | DataForSEO Google Trends client (category 41, worldwide, past 30 days, max 5 keywords/request, HTTP Basic auth) |
 | `game_ranking/pipelines/steam_pipeline.py` | Gawk-3000 driver; `append_from_uploaded_steam_csv()` |
 | `game_ranking/pipelines/nonsteam_pipeline.py` | SteamCommunityGroupScraper driver; `append_from_uploaded_nonsteam_csv()` |
 | `game_ranking/pipelines/state.py` | Scrape window tracking |
 | `game_ranking/pipelines/normalizer.py` | Encoding-safe CSV reading + per-upload normalization for Steam/Non-Steam |
 | `game_ranking/pipelines/trends_pipeline.py` | Background trends pipeline; runs tournament to find anchor champion, then scores all games |
-| `game_ranking/calculation/single_g_trends_scraper.py` | Standalone pytrends helper (single-game fetch with retry/backoff) |
 | `game_ranking/calculation/trends_tournament.py` | Google Trends tournament engine (anchor-based comparison, groups of 8) |
 | `game_ranking/app/tab_tournament.py` | Trends Tournament tab UI (multi-round bracket + cross-final Steam vs Non-Steam) |
 | `SteamCommunityGroupScraper/script.py` | Non-steam scraper (Selenium + IGDB + YouTube) |
@@ -53,7 +51,7 @@ game_ranking/raw/     — Raw CSVs (see schema below)
 game_ranking/data/    — Excel files + inventory CSV
 game_ranking/cache/   — nonsteam_trends_cache.csv, steam_appid_cache.json,
                         player_counts_history.csv, steamspy_cache.csv, scraper_state.json,
-                        dataforseo_creds.json
+                        dataforseo_creds.json, tournament_anchor.json
 ```
 
 ---
@@ -113,7 +111,7 @@ SteamStatus, date_appended
 - Deduplication key: **AppId** for Steam, **Game Title** (case-insensitive) for Non-Steam
 - On upload, existing rows with matching key are **overwritten**; new rows are **appended**
 - Output always written to a date-stamped file (`raw_steam_YYYY-MM-DD.csv`)
-- **Trends backend**: `trends_pipeline.py` now uses DataForSEO (`dataforseo_trends.py`); pytrends files (`scraper.py`, `single_g_trends_scraper.py`) are legacy
+- **Trends backend**: `trends_pipeline.py` uses DataForSEO (`dataforseo_trends.py`); legacy pytrends files (`scraper.py`, `single_g_trends_scraper.py`, `test_proxy_rotation.py`) have been deleted
 - DataForSEO credentials stored in `cache/dataforseo_creds.json` (login + password, HTTP Basic auth)
 
 ---

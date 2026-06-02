@@ -19,7 +19,7 @@ from calculation.steam_players import fetch_player_counts_if_needed, resolve_inv
 from pipelines.steam_pipeline import append_from_uploaded_steam_csv
 from pipelines.nonsteam_pipeline import append_from_uploaded_nonsteam_csv
 from pipelines.normalizer import prepare_steam_upload, prepare_nonsteam_upload
-from app.helpers import load_defaults, reload_steam_from_csv, reload_nonsteam_from_csv, _write_trends_cache
+from app.helpers import load_defaults, reload_steam_from_csv, reload_nonsteam_from_csv
 from app.thread_state import _trends_thread_state
 from pipelines.trends_pipeline import run_trends_pipeline
 from app import tab_steam, tab_nonsteam, tab_inventory, tab_tournament
@@ -41,8 +41,6 @@ _SESSION_DEFAULTS = {
     "uploaded_steam_name":    None,
     "uploaded_nonsteam_bytes": None,
     "uploaded_nonsteam_name": None,
-    # "steam_scraper_log":      [],   # scraper disabled
-    # "nonsteam_scraper_log":   [],  # scraper disabled
     "trends_anchor":           None,
 }
 for _key, _default in _SESSION_DEFAULTS.items():
@@ -228,10 +226,6 @@ if _trends_thread_state["result"] is not None:
         st.session_state.nonsteam_trends = _res["scores"]
         st.session_state.trends_anchor = _res["anchor"]
         st.session_state.tournament_results_auto = _res["tournament_results"]
-        try:
-            _write_trends_cache(_res["scores"], _res["anchor"])
-        except Exception:
-            pass
 
 if _trends_thread_state["running"]:
     st.sidebar.info(f"🔄 {_trends_thread_state.get('progress', 'Trends updating...')}")

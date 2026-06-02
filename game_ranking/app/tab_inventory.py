@@ -14,9 +14,11 @@ try:
 except ImportError:
     _HAS_ALTAIR = False
 
-from config import INVENTORY_FILE, STEAMSPY_CACHE_FILE, TRENDS_CACHE_FILE
-from calculation.steam_players import fetch_player_data, fetch_player_counts_if_needed
-from calculation.process_data import calculate_google_trends_points
+from config import INVENTORY_FILE, STEAMSPY_CACHE_FILE, TRENDS_CACHE_FILE, INVENTORY_TRENDS_HISTORY_FILE
+from calculation.steam_players import fetch_player_data
+from calculation.trends_tournament import compare_group, BATCH_SIZE, CALL_SLEEP
+from calculation.dataforseo_trends import load_credentials
+from pipelines.trends_pipeline import load_tournament_anchor
 from app.helpers import filter_stale_trends_games, load_trends_cache_timestamps
 
 
@@ -237,96 +239,151 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             on_change=handle_change,
         )
 
-    # ── Player Trend ──────────────────────────────────────────────────────────
+    # ── Google Trends ─────────────────────────────────────────────────────────
     st.divider()
-    with st.expander("📈 Player Trend — Steam Games", expanded=True):
+    with st.expander("📊 Google Trends — All Inventory Games", expanded=True):
         st.caption(
-            "Hourly concurrent player snapshots for all Steam games in the inventory. "
-            "Collected automatically while the app is open."
+            "Google Trends scores (0–100) for all inventory games compared against the "
+            "tournament anchor. Cached for 24 h. Click Refresh to update stale or missing entries."
         )
 
-        if st.button("🔄 Fetch Now", key="fetch_players_now", help="Force an immediate player count snapshot"):
-            with st.spinner("Fetching player counts..."):
-                _inv = pd.read_csv(INVENTORY_FILE, index_col=0)
-                st.session_state.player_count_history = fetch_player_counts_if_needed(_inv, force=True)
-            st.toast("Player counts updated!", icon="✅")
-            st.rerun()
-
-        history_df = st.session_state.player_count_history
-
-        if history_df.empty:
-            st.info(
-                "No data yet — click **Fetch Now** to collect the first snapshot, "
-                "then the app will collect one automatically each hour."
+        _gt_btn_col, _gt_ts_col = st.columns([2, 3])
+        with _gt_btn_col:
+            _do_refresh_all = st.button(
+                "🔄 Refresh Trends", key="inv_refresh_all_trends",
+                help="Fetch scores for all inventory games (ignores current filter).",
             )
-        else:
-            if not _HAS_ALTAIR:
-                st.warning("Install altair to see the chart.")
+        with _gt_ts_col:
+            _all_ts = st.session_state.get("inv_all_trends_fetched_at")
+            if _all_ts:
+                try:
+                    st.caption(f"Last fetched: {dt.datetime.strptime(_all_ts, '%Y-%m-%d %H:%M:%S').strftime('%d %b %Y, %H:%M')}")
+                except Exception:
+                    st.caption(f"Last fetched: {_all_ts}")
             else:
-                history_df = history_df.copy()
-                history_df["date"] = pd.to_datetime(history_df["date"])
-                last_snapshot = history_df["date"].max()
-                st.caption(f"Last snapshot: {last_snapshot.strftime('%Y-%m-%d %H:%M')}")
+                st.caption("Never fetched")
 
-                cutoff = pd.Timestamp.now() - pd.Timedelta(days=30)
-                recent = history_df[history_df["date"] >= cutoff].copy()
+        if _do_refresh_all:
+            _all_inv_games = st.session_state.game_data["Game Name"].dropna().unique().tolist()
+            _cached_ts_all = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
+            _stale_all = filter_stale_trends_games(_all_inv_games, _cached_ts_all)
 
-                if recent.empty:
-                    st.info("No snapshots in the last 30 days — click Fetch Now to start collecting data.")
+            if not _stale_all:
+                st.toast("All trends data is fresh (< 24 h)", icon="✅")
+            else:
+                _anchor_info_all = load_tournament_anchor()
+                if not _anchor_info_all:
+                    st.warning("No tournament anchor saved. Run the Trends Tournament first from the Tournament tab.")
                 else:
-                    recent["date_str"] = recent["date"].dt.strftime("%Y-%m-%d")
-                    daily = (
-                        recent.groupby(["date_str", "game_name"], as_index=False)["player_count"].max()
+                    _anchor_all = _anchor_info_all["anchor"]
+                    _login_all, _password_all = load_credentials()
+                    _batches_all = [
+                        _stale_all[i:i + BATCH_SIZE]
+                        for i in range(0, len(_stale_all), BATCH_SIZE)
+                    ]
+                    _bar_all = st.progress(0, text="Starting…")
+                    _refresh_ts_all = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                    for _i, _batch in enumerate(_batches_all):
+                        _label = ", ".join(_batch[:2]) + ("…" if len(_batch) > 2 else "")
+                        _bar_all.progress(
+                            _i / len(_batches_all),
+                            text=f"Batch {_i + 1}/{len(_batches_all)}: {_label}",
+                        )
+                        try:
+                            _batch_scores = compare_group(
+                                _batch,
+                                login=_login_all,
+                                password=_password_all,
+                                anchor=_anchor_all,
+                            )
+                            for _game, _score in _batch_scores.items():
+                                st.session_state.nonsteam_trends[_game] = (
+                                    int(_score) if isinstance(_score, (int, float)) else 0
+                                )
+                        except Exception as _e:
+                            for _game in _batch:
+                                st.session_state.nonsteam_trends[_game] = 0
+                            st.error(f"Trends fetch failed for batch: {_e}")
+                        try:
+                            _cached_ts_all = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
+                            pd.DataFrame([
+                                {
+                                    "game_name": k,
+                                    "trends_score": v,
+                                    "fetched_at": _refresh_ts_all
+                                    if k in _stale_all
+                                    else _cached_ts_all.get(k, _refresh_ts_all),
+                                }
+                                for k, v in st.session_state.nonsteam_trends.items()
+                            ]).to_csv(TRENDS_CACHE_FILE, index=False)
+                        except Exception as _e:
+                            st.error(f"Cache write failed: {_e}")
+                        if _i < len(_batches_all) - 1:
+                            time.sleep(CALL_SLEEP)
+
+                    # Append new scores to history file
+                    try:
+                        _new_rows = pd.DataFrame([
+                            {"game_name": g, "trends_score": st.session_state.nonsteam_trends.get(g, 0), "fetched_at": _refresh_ts_all}
+                            for g in _stale_all
+                        ])
+                        if INVENTORY_TRENDS_HISTORY_FILE.exists():
+                            _existing_hist = pd.read_csv(INVENTORY_TRENDS_HISTORY_FILE)
+                            _new_rows = pd.concat([_existing_hist, _new_rows], ignore_index=True)
+                        _new_rows.to_csv(INVENTORY_TRENDS_HISTORY_FILE, index=False)
+                    except Exception as _e:
+                        st.error(f"History write failed: {_e}")
+
+                    _bar_all.progress(1.0, text="Done")
+                    st.session_state["inv_all_trends_fetched_at"] = _refresh_ts_all
+                    st.toast(f"Updated {len(_stale_all)} game(s)", icon="📊")
+                    st.rerun()
+
+        if not _HAS_ALTAIR:
+            st.warning("Install altair to see the chart.")
+        else:
+            try:
+                _hist_df = pd.read_csv(INVENTORY_TRENDS_HISTORY_FILE) if INVENTORY_TRENDS_HISTORY_FILE.exists() else pd.DataFrame()
+            except Exception:
+                _hist_df = pd.DataFrame()
+
+            if _hist_df.empty:
+                st.info("No trends data yet — click **Refresh Trends** above to fetch scores.")
+            else:
+                _all_inv_names = set(
+                    st.session_state.game_data["Game Name"].dropna().astype(str).tolist()
+                )
+                _hist_df = _hist_df[_hist_df["game_name"].isin(_all_inv_names)].copy()
+                _hist_df["trends_score"] = pd.to_numeric(_hist_df["trends_score"], errors="coerce").fillna(0)
+                _hist_df["fetched_at"] = pd.to_datetime(_hist_df["fetched_at"], errors="coerce")
+                _hist_df["date_str"] = _hist_df["fetched_at"].dt.strftime("%Y-%m-%d")
+                # One point per game per day (latest fetch of that day)
+                _plot_df = (
+                    _hist_df.sort_values("fetched_at")
+                    .groupby(["game_name", "date_str"], as_index=False)
+                    .last()[["game_name", "date_str", "trends_score"]]
+                )
+
+                _trends_line = (
+                    alt.Chart(_plot_df)
+                    .mark_line(point=alt.OverlayMarkDef(filled=True, size=60))
+                    .encode(
+                        x=alt.X("date_str:O", title="Date", sort="ascending",
+                                axis=alt.Axis(labelAngle=-40, labelOverlap="greedy")),
+                        y=alt.Y("trends_score:Q", title="Trends Score",
+                                scale=alt.Scale(domain=[0, 100])),
+                        color=alt.Color("game_name:N", title="Game"),
+                        tooltip=[
+                            alt.Tooltip("game_name:N",    title="Game"),
+                            alt.Tooltip("date_str:O",     title="Date"),
+                            alt.Tooltip("trends_score:Q", title="Trends Score", format=".1f"),
+                        ],
                     )
-                    daily = daily.sort_values(["game_name", "date_str"])
-
-                    all_trend_games = sorted(daily["game_name"].unique().tolist())
-                    _filtered_names = set(filtered['Game Name'].dropna().astype(str).tolist()) if 'Game Name' in filtered.columns else set()
-                    _default_games = [g for g in all_trend_games if g in _filtered_names]
-                    if not _default_games:
-                        _default_games = (
-                            daily.groupby("game_name")["player_count"]
-                            .max().nlargest(10).index.tolist()
-                        )
-                    sel_col, scale_col = st.columns([4, 1])
-                    with sel_col:
-                        selected_trend_games = st.multiselect(
-                            "Games to display",
-                            options=all_trend_games,
-                            default=_default_games,
-                            placeholder="Select games…",
-                            key="trend_game_select",
-                        )
-                    with scale_col:
-                        log_scale = st.checkbox("Log scale", value=False, key="trend_log_scale")
-
-                    plot_daily = daily[daily["game_name"].isin(selected_trend_games)] if selected_trend_games else daily
-
-                    n_games = plot_daily["game_name"].nunique()
-                    n_days  = plot_daily["date_str"].nunique()
-                    st.caption(f"**{n_games} games** · **{n_days} day{'s' if n_days != 1 else ''}** of data")
-
-                    y_scale = alt.Scale(type="log") if log_scale else alt.Scale(type="linear", zero=False)
-
-                    trend_chart = (
-                        alt.Chart(plot_daily)
-                        .mark_line(point=alt.OverlayMarkDef(filled=True, size=60))
-                        .encode(
-                            x=alt.X("date_str:O", title="Date", sort="ascending",
-                                    axis=alt.Axis(labelAngle=-40, labelOverlap="greedy")),
-                            y=alt.Y("player_count:Q", title="Concurrent Players",
-                                    scale=y_scale, axis=alt.Axis(format="~s")),
-                            color=alt.Color("game_name:N", title="Game"),
-                            tooltip=[
-                                alt.Tooltip("game_name:N",    title="Game"),
-                                alt.Tooltip("date_str:O",     title="Date"),
-                                alt.Tooltip("player_count:Q", title="Peak Players", format=","),
-                            ],
-                        )
-                        .properties(height=420)
-                        .interactive()
-                    )
-                    st.altair_chart(trend_chart, use_container_width=True)
+                    .properties(height=420)
+                    .interactive()
+                )
+                st.altair_chart(_trends_line, use_container_width=True)
 
     # ── Peak Player Counts ─────────────────────────────────────────────────────
     with st.expander("📊 Peak Player Counts (SteamSpy)", expanded=False):
@@ -361,28 +418,39 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                 if not games_to_fetch:
                     st.toast("All trends data is fresh (< 24 h)", icon="✅")
                 else:
-                    bar = st.progress(0, text="Starting…")
-                    _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    for i, game in enumerate(games_to_fetch):
-                        try:
-                            score = calculate_google_trends_points(game)
-                            st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
-                        except Exception as e:
-                            st.session_state.nonsteam_trends[game] = 0
-                            st.error(f"Trends fetch failed for '{game}': {e}")
-                        bar.progress((i + 1) / len(games_to_fetch), text=f"{i+1}/{len(games_to_fetch)}: {game}")
-                        try:
-                            pd.DataFrame([
-                                {"game_name": k, "trends_score": v,
-                                 "fetched_at": _refresh_ts if k in games_to_fetch else _cached_ts.get(k, _refresh_ts)}
-                                for k, v in st.session_state.nonsteam_trends.items()
-                            ]).to_csv(TRENDS_CACHE_FILE, index=False)
-                        except Exception as e:
-                            st.error(f"Cache write failed: {e}")
-                        time.sleep(1.5)
-                    st.session_state.trends_last_fetched_at = _refresh_ts
-                    st.toast(f"Updated {len(games_to_fetch)} game(s)", icon="📊")
-                    st.rerun()
+                    _anchor_info = load_tournament_anchor()
+                    if not _anchor_info:
+                        st.warning("No tournament anchor saved. Run the tournament first from the Tournament tab.")
+                    else:
+                        _anchor = _anchor_info["anchor"]
+                        _login, _password = load_credentials()
+                        _batches = [games_to_fetch[i:i + BATCH_SIZE] for i in range(0, len(games_to_fetch), BATCH_SIZE)]
+                        bar = st.progress(0, text="Starting…")
+                        _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        for i, batch in enumerate(_batches):
+                            _label = ", ".join(batch[:2]) + ("…" if len(batch) > 2 else "")
+                            bar.progress(i / len(_batches), text=f"Batch {i+1}/{len(_batches)}: {_label}")
+                            try:
+                                _batch_scores = compare_group(batch, login=_login, password=_password, anchor=_anchor)
+                                for game, score in _batch_scores.items():
+                                    st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+                            except Exception as e:
+                                for game in batch:
+                                    st.session_state.nonsteam_trends[game] = 0
+                                st.error(f"Trends fetch failed for batch: {e}")
+                            try:
+                                pd.DataFrame([
+                                    {"game_name": k, "trends_score": v,
+                                     "fetched_at": _refresh_ts if k in games_to_fetch else _cached_ts.get(k, _refresh_ts)}
+                                    for k, v in st.session_state.nonsteam_trends.items()
+                                ]).to_csv(TRENDS_CACHE_FILE, index=False)
+                            except Exception as e:
+                                st.error(f"Cache write failed: {e}")
+                            if i < len(_batches) - 1:
+                                time.sleep(CALL_SLEEP)
+                        st.session_state.trends_last_fetched_at = _refresh_ts
+                        st.toast(f"Updated {len(games_to_fetch)} game(s)", icon="📊")
+                        st.rerun()
             _ts = st.session_state.get("trends_last_fetched_at")
             if _ts:
                 try:

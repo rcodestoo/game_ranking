@@ -2,7 +2,6 @@ import pandas as pd
 import math
 import requests
 from config import DEV_LIST, GENRE_LIST, INVENTORY_FILE
-from calculation.scraper import fetch_game_trends
 
 # LOAD DEVELOPER AND GENRE LIST
 developer_list = pd.read_excel(DEV_LIST)
@@ -97,9 +96,6 @@ def calculate_developer_weighted_points(developers, developer_list=developer_lis
     avg_weighted_point = sum(dev_points) / len(dev_points) if dev_points else 1
     return avg_weighted_point, missing_devs
 
-
-def calculate_google_trends_points(game_name: str) -> int:
-    return fetch_game_trends(game_name)
 
 
 def populate_appids():

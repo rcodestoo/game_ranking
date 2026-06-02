@@ -6,6 +6,7 @@ then compares the two champions in a cross-final.
 All searches are scoped to category 41 (Computer & Video Games), worldwide, past month.
 """
 
+import datetime as dt
 import math
 import time
 import pandas as pd
@@ -21,7 +22,7 @@ from pipelines.trends_pipeline import run_trends_pipeline
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_steam_games(n: int | None = None) -> list[str]:
+def _get_steam_games(n: int | None = None, appended_since=None) -> list[str]:
     df = st.session_state.get("df_steam")
     if df is None or df.empty:
         return []
@@ -29,11 +30,14 @@ def _get_steam_games(n: int | None = None) -> list[str]:
         df = df.sort_values("priority_score", ascending=False)
     if "Name" not in df.columns:
         return []
+    if appended_since is not None and "date_appended" in df.columns:
+        da = pd.to_datetime(df["date_appended"], errors="coerce")
+        df = df[da >= pd.Timestamp(appended_since)]
     series = df["Name"].dropna().astype(str)
     return series.tolist() if n is None else series.head(n).tolist()
 
 
-def _get_nonsteam_games(n: int | None = None) -> list[str]:
+def _get_nonsteam_games(n: int | None = None, appended_since=None) -> list[str]:
     df = st.session_state.get("df_nonsteam")
     if df is None or df.empty:
         return []
@@ -47,6 +51,9 @@ def _get_nonsteam_games(n: int | None = None) -> list[str]:
     ].copy()
     if "priority_score" in df.columns:
         df = df.sort_values("priority_score", ascending=False)
+    if appended_since is not None and "date_appended" in df.columns:
+        da = pd.to_datetime(df["date_appended"], errors="coerce")
+        df = df[da >= pd.Timestamp(appended_since)]
     series = df[col].dropna().astype(str)
     return series.tolist() if n is None else series.head(n).tolist()
 
@@ -144,7 +151,7 @@ def render():
             df_steam    = st.session_state.get("df_steam")
             df_nonsteam = st.session_state.get("df_nonsteam")
             if df_steam is not None and df_nonsteam is not None:
-                run_trends_pipeline(df_steam, df_nonsteam)
+                run_trends_pipeline(df_steam, df_nonsteam, appended_since=appended_since)
                 st.rerun()
             else:
                 st.warning("Load Steam and Non-Steam data first.")
@@ -161,7 +168,7 @@ def render():
 
     # ── Config ────────────────────────────────────────────────────────────────
     with st.expander("⚙️ Settings", expanded=True):
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             limit_games = st.checkbox(
                 "Limit to top N games per source", value=False,
@@ -173,6 +180,28 @@ def render():
                     "Top N games per source", min_value=8, max_value=256, value=32, step=8,
                 )
         with c2:
+            _df_s = st.session_state.get("df_steam")
+            _df_ns = st.session_state.get("df_nonsteam")
+            _dates = []
+            for _df in [_df_s, _df_ns]:
+                if _df is not None and "date_appended" in _df.columns:
+                    _d = pd.to_datetime(_df["date_appended"], errors="coerce").max()
+                    if pd.notna(_d):
+                        _dates.append(_d)
+            _default_appended = max(_dates).date() if _dates else dt.date.today()
+            appended_since = st.date_input(
+                "Include games appended from",
+                value=_default_appended,
+                format="DD/MM/YYYY",
+                key="tournament_appended_since",
+            )
+            if st.checkbox(
+                "Include all games (ignore date filter)",
+                value=False,
+                key="tournament_include_all_games",
+            ):
+                appended_since = None
+        with c3:
             st.caption(f"**Anchor term:** {ANCHOR}")
             st.caption("**Category:** Computer & Video Games (41) · **Location:** Worldwide · **Timeframe:** past month")
 
@@ -180,7 +209,7 @@ def render():
 
     # ── Steam bracket ─────────────────────────────────────────────────────────
     st.subheader("🚀 Steam Bracket")
-    steam_games = _get_steam_games(top_n)
+    steam_games = _get_steam_games(top_n, appended_since=appended_since)
 
     if not steam_games:
         st.warning("No Steam games loaded.")
@@ -228,7 +257,7 @@ def render():
 
     # ── Non-Steam bracket ─────────────────────────────────────────────────────
     st.subheader("📽️ Non-Steam Bracket")
-    nonsteam_games = _get_nonsteam_games(top_n)
+    nonsteam_games = _get_nonsteam_games(top_n, appended_since=appended_since)
 
     if not nonsteam_games:
         st.warning("No Non-Steam games loaded.")

@@ -13,18 +13,41 @@ Tournament flow:
   5. Optional cross-final: Steam champion vs Non-Steam champion.
 """
 
+import re
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from calculation.dataforseo_trends import fetch_comparison, GAMES_CATEGORY
 
 log = logging.getLogger(__name__)
 
+# Matches common edition/remaster suffixes so Google Trends gets a cleaner query.
+# Handles colon, dash, or space separators before the suffix.
+# Examples: "Game: Deluxe Edition" → "Game", "Dark Souls: Remastered" → "Dark Souls"
+_EDITION_RE = re.compile(
+    r'(?:\s*[-:]\s*|\s+)'
+    r'(?:'
+    r'(?:Deluxe|Standard|Complete|Ultimate|Gold|Enhanced|Anniversary|'
+    r'Definitive|Special|Digital|Premium|Collectors?\'?|Extended|'
+    r'Legendary|Game\s+of\s+the\s+Year|GOTY)\s+Edition'
+    r"|Director'?s?\s+Cut"
+    r'|Remastered'
+    r')\s*$',
+    re.IGNORECASE,
+)
+
+
+def strip_edition_suffix(name: str) -> str:
+    """Remove edition/remaster suffixes for cleaner Google Trends queries."""
+    return _EDITION_RE.sub('', name).strip()
+
 ANCHOR               = "Minecraft"   # stable reference for anchor-based scoring
 GAMES_PER_GROUP      = 8            # games per manual tournament group (UI brackets)
 TOURNAMENT_GROUP_SIZE = 5           # games per auto-tournament group (= DataForSEO max)
 BATCH_SIZE           = 4            # games per anchor-scoring batch (4 + anchor = 5)
-CALL_SLEEP           = 2.0          # seconds between API calls
+CALL_SLEEP           = 2.0          # seconds each worker sleeps after its API call
+MAX_PARALLEL_CALLS   = 3            # concurrent DataForSEO requests (~3× speedup)
 
 
 # ── Low-level: single batch, no anchor ───────────────────────────────────────
@@ -72,6 +95,21 @@ def compare_group(
     return scores
 
 
+# ── Parallel worker for a single group ───────────────────────────────────────
+
+def _run_group_worker(args: tuple) -> tuple:
+    """
+    Thread worker: fetch scores for one group, then sleep to pace API calls.
+    Returns (g_idx, group, scores_or_None).  scores=None means a bye.
+    """
+    g_idx, group, login, password, category_code, sleep_s = args
+    if len(group) == 1:
+        return g_idx, group, None
+    scores = compare_group_direct(group, login, password, category_code)
+    time.sleep(sleep_s)   # each worker paces itself — same rate as before, just parallel
+    return g_idx, group, scores
+
+
 # ── High-level: full tournament ───────────────────────────────────────────────
 
 def run_tournament(
@@ -89,7 +127,10 @@ def run_tournament(
     Highest scorer in each group advances. Rounds continue until one champion remains.
     Single-game groups get an automatic bye.
 
-    progress_callback(msg: str) is called before each group comparison.
+    Groups within each round are processed in parallel (MAX_PARALLEL_CALLS workers).
+    Each worker sleeps sleep_s after its call to maintain per-request pacing.
+
+    progress_callback(msg: str) is called as groups complete each round.
 
     Returns a flat list of result dicts:
       game        – game name
@@ -105,38 +146,51 @@ def run_tournament(
 
     while len(pool) > 1:
         groups = [pool[i:i + TOURNAMENT_GROUP_SIZE] for i in range(0, len(pool), TOURNAMENT_GROUP_SIZE)]
-        next_pool: list[str] = []
 
-        for g_idx, group in enumerate(groups):
-            if len(group) == 1:
+        worker_args = [
+            (g_idx, group, login, password, category_code, sleep_s)
+            for g_idx, group in enumerate(groups)
+        ]
+
+        # Process all groups in this round in parallel
+        group_results: dict[int, tuple] = {}
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_CALLS) as executor:
+            futures = {
+                executor.submit(_run_group_worker, args): args[0]
+                for args in worker_args
+            }
+            for future in as_completed(futures):
+                g_idx, group, scores = future.result()
+                group_results[g_idx] = (group, scores)
+                if progress_callback:
+                    done = len(group_results)
+                    progress_callback(
+                        f"Round {round_num}: {done}/{len(groups)} groups done"
+                    )
+
+        # Reconstruct next pool in original group order
+        next_pool: list[str] = []
+        for g_idx in range(len(groups)):
+            group, scores = group_results[g_idx]
+            if scores is None:  # bye
                 results.append({
                     "game": group[0], "score": None,
                     "round": round_num, "group": g_idx + 1,
                     "eliminated": False, "champion": False,
                 })
                 next_pool.append(group[0])
-                continue
-
-            if progress_callback:
-                preview = ", ".join(group[:3]) + ("…" if len(group) > 3 else "")
-                progress_callback(f"Round {round_num} · Group {g_idx + 1}/{len(groups)}: {preview}")
-
-            scores = compare_group_direct(group, login, password, category_code)
-            winner = max(scores, key=scores.get) if scores else group[0]
-            next_pool.append(winner)
-
-            for game in group:
-                results.append({
-                    "game":      game,
-                    "score":     scores.get(game, 0.0),
-                    "round":     round_num,
-                    "group":     g_idx + 1,
-                    "eliminated": game != winner,
-                    "champion":  False,
-                })
-
-            if g_idx < len(groups) - 1:
-                time.sleep(sleep_s)
+            else:
+                winner = max(scores, key=scores.get) if scores else group[0]
+                next_pool.append(winner)
+                for game in group:
+                    results.append({
+                        "game":       game,
+                        "score":      scores.get(game, 0.0),
+                        "round":      round_num,
+                        "group":      g_idx + 1,
+                        "eliminated": game != winner,
+                        "champion":   False,
+                    })
 
         pool = next_pool
         round_num += 1

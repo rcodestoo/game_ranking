@@ -3,20 +3,19 @@ Non-Steam Report tab.
 """
 
 import datetime as dt
-# import threading   # scraper disabled
 import time
 
 import pandas as pd
 import streamlit as st
 
-# from app.thread_state import _ns_thread_state, _ns_verify_thread_state  # scraper disabled
 from app.thread_state import _trends_thread_state
 from app.helpers import (highlight_new_rows, reload_nonsteam_from_csv,
                          filter_stale_trends_games, load_trends_cache_timestamps)
-from calculation.process_data import calculate_google_trends_points, calculate_hybrid_score, calculate_trends_weighted_points
-from config import TRENDS_CACHE_FILE  # get_latest_nonsteam_csv unused (scraper disabled)
-# from pipelines.nonsteam_pipeline import run_nonsteam_scraper, verify_single_game_steam_status  # scraper disabled
-# from pipelines.state import get_last_run_info  # scraper disabled
+from calculation.process_data import calculate_hybrid_score, calculate_trends_weighted_points
+from calculation.trends_tournament import compare_group, BATCH_SIZE, CALL_SLEEP
+from calculation.dataforseo_trends import load_credentials
+from pipelines.trends_pipeline import load_tournament_anchor
+from config import TRENDS_CACHE_FILE
 
 
 def _sync_from_ns_dates():
@@ -168,12 +167,6 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     )
     df_non_steam_ranked = df_non_steam_ranked[~df_non_steam_ranked['_on_steam']].reset_index(drop=True)
 
-    # ── Scraper status + run button (disabled) ────────────────────────────────
-    # ns_info = get_last_run_info("non_steam")
-    # run_nonsteam = st.button("▶ Run Scraper", ...)
-    # Auto-verify background thread (disabled)
-    # _unverified_count = int(...)
-
     # ── Summary metrics ───────────────────────────────────────────────────────
     _today_str = today.isoformat()
     _new_today = int(
@@ -283,29 +276,39 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
             if not games_to_fetch:
                 st.toast("All trends data is fresh (< 24 h)", icon="✅")
             else:
-                bar = st.progress(0, text="Starting…")
-                _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                for i, game in enumerate(games_to_fetch):
-                    try:
-                        score = calculate_google_trends_points(game)
-                        st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
-                    except Exception as e:
-                        st.session_state.nonsteam_trends[game] = 0
-                        st.error(f"Trends fetch failed for '{game}': {e}")
-                    bar.progress((i + 1) / len(games_to_fetch), text=f"{i+1}/{len(games_to_fetch)}: {game}")
-                    try:
-                        pd.DataFrame([
-                            {"game_name": k, "trends_score": v,
-                             "fetched_at": _refresh_ts if k in games_to_fetch else _cached_ts.get(k, _refresh_ts)}
-                            for k, v in st.session_state.nonsteam_trends.items()
-                        ]).to_csv(TRENDS_CACHE_FILE, index=False)
-                    except Exception as e:
-                        st.error(f"Cache write failed: {e}")
-                    if i < len(games_to_fetch) - 1:
-                        time.sleep(10)
-                st.session_state.trends_last_fetched_at = _refresh_ts
-                st.toast(f"Fetched {len(games_to_fetch)} game(s)", icon="📊")
-                st.rerun()
+                _anchor_info = load_tournament_anchor()
+                if not _anchor_info:
+                    st.warning("No tournament anchor saved. Run the tournament first from the Tournament tab.")
+                else:
+                    _anchor = _anchor_info["anchor"]
+                    _login, _password = load_credentials()
+                    _batches = [games_to_fetch[i:i + BATCH_SIZE] for i in range(0, len(games_to_fetch), BATCH_SIZE)]
+                    bar = st.progress(0, text="Starting…")
+                    _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    for i, batch in enumerate(_batches):
+                        _label = ", ".join(batch[:2]) + ("…" if len(batch) > 2 else "")
+                        bar.progress(i / len(_batches), text=f"Batch {i+1}/{len(_batches)}: {_label}")
+                        try:
+                            _batch_scores = compare_group(batch, login=_login, password=_password, anchor=_anchor)
+                            for game, score in _batch_scores.items():
+                                st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+                        except Exception as e:
+                            for game in batch:
+                                st.session_state.nonsteam_trends[game] = 0
+                            st.error(f"Trends fetch failed for batch: {e}")
+                        try:
+                            pd.DataFrame([
+                                {"game_name": k, "trends_score": v,
+                                 "fetched_at": _refresh_ts if k in games_to_fetch else _cached_ts.get(k, _refresh_ts)}
+                                for k, v in st.session_state.nonsteam_trends.items()
+                            ]).to_csv(TRENDS_CACHE_FILE, index=False)
+                        except Exception as e:
+                            st.error(f"Cache write failed: {e}")
+                        if i < len(_batches) - 1:
+                            time.sleep(CALL_SLEEP)
+                    st.session_state.trends_last_fetched_at = _refresh_ts
+                    st.toast(f"Fetched {len(games_to_fetch)} game(s)", icon="📊")
+                    st.rerun()
         _ts = st.session_state.get("trends_last_fetched_at")
         if _ts:
             try:
@@ -318,6 +321,11 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     with meta_col:
         st.caption(f"Showing **{len(df_filtered_ns)}** of **{len(df_non_steam_ranked)}**")
         st.caption(f"Source: *{nonsteam_source_name}*")
+        _ai = load_tournament_anchor()
+        if _ai:
+            st.caption(f"Trends anchor: **{_ai['anchor']}** *(run {_ai['run_at'][:10]})*")
+        else:
+            st.caption("Trends anchor: *none — run tournament first*")
 
     cols_to_show = [
         'Game Title', 'priority_score', 'youtube_score', 'trends_points',
@@ -385,30 +393,40 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
             disabled=not _ns_selected,
             use_container_width=True,
         ):
-            _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
-            bar = st.progress(0, text="Starting…")
-            _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            for i, game in enumerate(_ns_selected):
-                try:
-                    score = calculate_google_trends_points(game)
-                    st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
-                except Exception as e:
-                    st.session_state.nonsteam_trends[game] = 0
-                    st.error(f"Trends fetch failed for '{game}': {e}")
-                bar.progress((i + 1) / len(_ns_selected), text=f"{i+1}/{len(_ns_selected)}: {game}")
-                try:
-                    pd.DataFrame([
-                        {"game_name": k, "trends_score": v,
-                         "fetched_at": _refresh_ts if k in _ns_selected else _cached_ts.get(k, _refresh_ts)}
-                        for k, v in st.session_state.nonsteam_trends.items()
-                    ]).to_csv(TRENDS_CACHE_FILE, index=False)
-                except Exception as e:
-                    st.error(f"Cache write failed: {e}")
-                if i < len(_ns_selected) - 1:
-                    time.sleep(10)
-            st.session_state.trends_last_fetched_at = _refresh_ts
-            st.toast(f"Fetched {len(_ns_selected)} game(s)", icon="📊")
-            st.rerun()
+            _anchor_info = load_tournament_anchor()
+            if not _anchor_info:
+                st.warning("No tournament anchor saved. Run the tournament first from the Tournament tab.")
+            else:
+                _anchor = _anchor_info["anchor"]
+                _login, _password = load_credentials()
+                _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
+                _batches = [_ns_selected[i:i + BATCH_SIZE] for i in range(0, len(_ns_selected), BATCH_SIZE)]
+                bar = st.progress(0, text="Starting…")
+                _refresh_ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                for i, batch in enumerate(_batches):
+                    _label = ", ".join(batch[:2]) + ("…" if len(batch) > 2 else "")
+                    bar.progress(i / len(_batches), text=f"Batch {i+1}/{len(_batches)}: {_label}")
+                    try:
+                        _batch_scores = compare_group(batch, login=_login, password=_password, anchor=_anchor)
+                        for game, score in _batch_scores.items():
+                            st.session_state.nonsteam_trends[game] = int(score) if isinstance(score, (int, float)) else 0
+                    except Exception as e:
+                        for game in batch:
+                            st.session_state.nonsteam_trends[game] = 0
+                        st.error(f"Trends fetch failed for batch: {e}")
+                    try:
+                        pd.DataFrame([
+                            {"game_name": k, "trends_score": v,
+                             "fetched_at": _refresh_ts if k in _ns_selected else _cached_ts.get(k, _refresh_ts)}
+                            for k, v in st.session_state.nonsteam_trends.items()
+                        ]).to_csv(TRENDS_CACHE_FILE, index=False)
+                    except Exception as e:
+                        st.error(f"Cache write failed: {e}")
+                    if i < len(_batches) - 1:
+                        time.sleep(CALL_SLEEP)
+                st.session_state.trends_last_fetched_at = _refresh_ts
+                st.toast(f"Fetched {len(_ns_selected)} game(s)", icon="📊")
+                st.rerun()
 
     # ── Supporting info ───────────────────────────────────────────────────────
     with st.expander("📐 How scores are calculated"):
@@ -417,7 +435,3 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
         st.latex(r"\text{YouTube Score} = 0.5 \times \text{linear\_norm}(\text{Adj. Views}) + 0.5 \times \text{log\_norm}(\text{Adj. Views}) \quad \in [1, 5]")
         st.latex(r"\text{Trends Points} = \frac{\text{Trends Score}}{100} \times 4 + 1 \quad \in [1, 5]")
         st.latex(r"\text{Priority Score} = (\text{YouTube Score} \times w_{yt}) + (\text{Trends Points} \times w_{trends})")
-
-    # ── Disabled sections ─────────────────────────────────────────────────────
-    # Verify Steam Status (disabled — scraper off)
-    # Auto-verify progress (disabled — scraper off)
