@@ -148,11 +148,11 @@ df_nonsteam = st.session_state.df_nonsteam.copy()
 
 # ── Global date range (shared across all tabs) ────────────────────────────────
 def _min_date(series: pd.Series) -> dt.date:
-    parsed = pd.to_datetime(series, errors='coerce').dropna()
+    parsed = pd.to_datetime(series, format='mixed', errors='coerce').dropna()
     return parsed.min().date() if len(parsed) else dt.date(2000, 1, 1)
 
 def _max_date(series: pd.Series) -> dt.date:
-    parsed = pd.to_datetime(series, errors='coerce').dropna()
+    parsed = pd.to_datetime(series, format='mixed', errors='coerce').dropna()
     return parsed.max().date() if len(parsed) else dt.date.today()
 
 _steam_min = _min_date(df_steam.get('ReleaseDate',            pd.Series(dtype=str)))
