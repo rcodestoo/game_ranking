@@ -48,14 +48,18 @@ def flagging(df):
 
     for index, row in df_calculation.iterrows():
         genres = row['Genres']
+        if not isinstance(genres, list):
+            genres = [str(genres)] if not (isinstance(genres, float)) else []
         indie_flag = False
         for genre in genres:
-            if genre.strip().lower() == 'indie':
+            if str(genre).strip().lower() == 'indie':
                 indie_flag = True
                 break
         df_calculation.loc[index, 'Is_Indie'] = indie_flag
 
         developers = row['Developers']
+        if not isinstance(developers, list):
+            developers = [str(developers)] if not isinstance(developers, float) else []
         df_calculation.loc[index, 'Has_Multiple_Developers'] = len(developers) > 1
 
         df_calculation.loc[index, 'Has_Multiple_Genres'] = len(genres) > 1
@@ -81,6 +85,8 @@ def calculate_trends_weighted_points(trends_score: float) -> float:
 
 
 def calculate_developer_weighted_points(developers, developer_list=developer_list):
+    if not isinstance(developers, list):
+        developers = [str(developers)] if not isinstance(developers, float) else []
     missing_devs = []
     dev_points = []
     for developer in developers:
