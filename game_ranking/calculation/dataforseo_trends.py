@@ -4,6 +4,10 @@ DataForSEO Google Trends client.
 Compares game names within category 41 (Computer & Video Games), worldwide, past month.
 Max 5 keywords per request (Google Trends hard limit).
 Auth: HTTP Basic (login + password from DataForSEO dashboard).
+
+Uses the task-based endpoint (task_post → task_get) instead of the live endpoint.
+This delegates Google Trends rate-limiting to DataForSEO's internal queue, eliminating
+40101 and 500 errors that occur when the live endpoint is hit under load.
 """
 
 import json
@@ -19,7 +23,14 @@ BASE_URL       = "https://api.dataforseo.com/v3"
 GAMES_CATEGORY = 41   # Computer & Video Games
 MAX_KEYWORDS   = 5
 
+TASK_POST_URL = f"{BASE_URL}/keywords_data/google_trends/explore/task_post"
+TASK_GET_URL  = f"{BASE_URL}/keywords_data/google_trends/explore/task_get"
+POLL_INTERVAL = 5    # seconds between task_get polls
+POLL_TIMEOUT  = 180  # total seconds to wait for a task to complete
+POST_RETRIES  = 3    # attempts to submit the task
+
 CREDS_FILE = Path(__file__).parent.parent / "cache" / "dataforseo_creds.json"
+
 
 def _date_range() -> tuple[str, str]:
     from datetime import date, timedelta
@@ -49,6 +60,139 @@ def save_credentials(login: str, password: str) -> None:
     )
 
 
+# ── Task helpers ──────────────────────────────────────────────────────────────
+
+def _is_dns_error(e: Exception) -> bool:
+    s = str(e)
+    return "getaddrinfo failed" in s or "Errno 11001" in s
+
+
+def _post_task(
+    payload: list[dict],
+    login: str,
+    password: str,
+) -> str | None:
+    """
+    Submit a task to DataForSEO's task_post endpoint.
+    Returns the task_id string on success, None on failure.
+    """
+    for attempt in range(POST_RETRIES):
+        try:
+            resp = requests.post(
+                TASK_POST_URL,
+                json=payload,
+                auth=(login, password),
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                wait = 30 * (attempt + 1)
+                log.warning("DataForSEO rate limited (429), waiting %ds before retry", wait)
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            candidate = resp.json()
+        except Exception as e:
+            if _is_dns_error(e):
+                log.error("DataForSEO DNS resolution failed — check network connectivity")
+                return None
+            log.warning("DataForSEO task_post attempt %d failed: %s", attempt + 1, e)
+            if attempt < POST_RETRIES - 1:
+                time.sleep(5 * (attempt + 1) + random.uniform(0, 2))
+                continue
+            log.error("DataForSEO task_post failed after %d attempts", POST_RETRIES)
+            return None
+
+        tasks = candidate.get("tasks", [])
+        if not tasks:
+            log.warning("DataForSEO task_post: empty tasks in response")
+            return None
+
+        task = tasks[0]
+        status_code = task.get("status_code")
+        task_id = task.get("id")
+
+        if status_code in (20100, 20000) and task_id:
+            return task_id
+
+        log.warning(
+            "DataForSEO task_post attempt %d unexpected status %s: %s",
+            attempt + 1, status_code, task.get("status_message"),
+        )
+        if attempt < POST_RETRIES - 1:
+            time.sleep(5 * (attempt + 1) + random.uniform(0, 2))
+
+    return None
+
+
+def _poll_task(
+    task_id: str,
+    login: str,
+    password: str,
+) -> dict | None:
+    """
+    Poll task_get/{task_id} until the task completes or POLL_TIMEOUT elapses.
+    Returns the completed tasks[0] dict on success, None on failure or timeout.
+    """
+    # Status codes that mean "still working — keep polling"
+    _IN_PROGRESS = {20100, 20200}
+    # Status codes that mean the task failed and polling is pointless
+    _TERMINAL_ERRORS = {40101, 40400}
+
+    deadline = time.monotonic() + POLL_TIMEOUT
+    poll_count = 0
+
+    while time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL)
+        poll_count += 1
+
+        try:
+            resp = requests.get(
+                f"{TASK_GET_URL}/{task_id}",
+                auth=(login, password),
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            if _is_dns_error(e):
+                log.error("DataForSEO DNS resolution failed during polling")
+                return None
+            log.warning("DataForSEO poll %d failed: %s — retrying", poll_count, e)
+            continue
+
+        tasks = data.get("tasks", [])
+        if not tasks:
+            log.warning("DataForSEO poll %d: empty tasks array", poll_count)
+            continue
+
+        task = tasks[0]
+        status_code = task.get("status_code")
+
+        if status_code == 20000:
+            return task
+
+        if status_code in _IN_PROGRESS:
+            continue
+
+        if status_code in _TERMINAL_ERRORS or (status_code and status_code >= 50000):
+            log.error(
+                "DataForSEO task %s failed with status %s: %s",
+                task_id, status_code, task.get("status_message"),
+            )
+            return None
+
+        log.warning(
+            "DataForSEO task %s unexpected status %s: %s — continuing to poll",
+            task_id, status_code, task.get("status_message"),
+        )
+
+    log.error(
+        "DataForSEO task %s timed out after %ds (%d polls)",
+        task_id, POLL_TIMEOUT, poll_count,
+    )
+    return None
+
+
 # ── Core fetch ────────────────────────────────────────────────────────────────
 
 def fetch_comparison(
@@ -58,7 +202,7 @@ def fetch_comparison(
     category_code: int = GAMES_CATEGORY,
 ) -> dict[str, float]:
     """
-    Compare up to 5 game names via DataForSEO Google Trends (live endpoint).
+    Compare up to 5 game names via DataForSEO Google Trends (task-based endpoint).
     Worldwide, past 30 days, category 41 (Computer & Video Games).
 
     Returns {game_name: mean_interest_score} where scores are 0-100 relative
@@ -80,64 +224,19 @@ def fetch_comparison(
         "item_types":    ["google_trends_graph"],
     }]
 
-    # 40101 = Google Trends internal server error (transient) — safe to retry
-    _RETRYABLE_TASK_CODES = {40101}
+    # Step 1: Submit task
+    task_id = _post_task(payload, login, password)
+    if task_id is None:
+        log.error("DataForSEO: failed to submit task for keywords: %s", kw_list)
+        return {g: 0.0 for g in kw_list}
 
-    resp_data = None
-    for attempt in range(3):
-        try:
-            resp = requests.post(
-                f"{BASE_URL}/keywords_data/google_trends/explore/live",
-                json=payload,
-                auth=(login, password),
-                timeout=150,
-            )
-            if resp.status_code == 429:
-                wait = 30 * (attempt + 1)
-                log.warning("DataForSEO rate limited (429), waiting %ds before retry", wait)
-                time.sleep(wait)
-                continue
-            resp.raise_for_status()
-            candidate = resp.json()
-        except Exception as e:
-            err_str = str(e)
-            if "getaddrinfo failed" in err_str or "Errno 11001" in err_str:
-                log.error("DataForSEO DNS resolution failed — check network connectivity")
-                return {g: 0.0 for g in kw_list}
-            log.warning("DataForSEO attempt %d failed: %s", attempt + 1, e)
-            if attempt < 2:
-                time.sleep(5 * (attempt + 1) + random.uniform(0, 2))
-                continue
-            log.error("DataForSEO request failed after 3 attempts: %s", e)
-            return {g: 0.0 for g in kw_list}
-
-        # Check task-level status before accepting the response
-        _tasks = candidate.get("tasks", [])
-        _task_code = _tasks[0].get("status_code") if _tasks else None
-        if _task_code in _RETRYABLE_TASK_CODES:
-            log.warning(
-                "DataForSEO attempt %d task error %s: %s — retrying",
-                attempt + 1, _task_code, _tasks[0].get("status_message"),
-            )
-            if attempt < 2:
-                time.sleep(10 * (attempt + 1) + random.uniform(0, 3))
-                continue
-            log.error("DataForSEO task error %s persisted after 3 attempts", _task_code)
-            return {g: 0.0 for g in kw_list}
-
-        resp_data = candidate
-        break
-
-    if resp_data is None:
+    # Step 2: Poll for result
+    task = _poll_task(task_id, login, password)
+    if task is None:
+        log.error("DataForSEO: task %s did not complete successfully", task_id)
         return {g: 0.0 for g in kw_list}
 
     # ── Parse response ────────────────────────────────────────────────────────
-    tasks = resp_data.get("tasks", [])
-    if not tasks:
-        log.warning("DataForSEO: empty tasks array")
-        return {g: 0.0 for g in kw_list}
-
-    task = tasks[0]
     status_code = task.get("status_code")
     if status_code != 20000:
         log.warning("DataForSEO task error %s: %s", status_code, task.get("status_message"))
