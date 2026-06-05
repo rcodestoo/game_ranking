@@ -8,6 +8,7 @@ Auth: HTTP Basic (login + password from DataForSEO dashboard).
 
 import json
 import logging
+import random
 import time
 import requests
 from pathlib import Path
@@ -99,9 +100,13 @@ def fetch_comparison(
             resp.raise_for_status()
             candidate = resp.json()
         except Exception as e:
+            err_str = str(e)
+            if "getaddrinfo failed" in err_str or "Errno 11001" in err_str:
+                log.error("DataForSEO DNS resolution failed — check network connectivity")
+                return {g: 0.0 for g in kw_list}
             log.warning("DataForSEO attempt %d failed: %s", attempt + 1, e)
             if attempt < 2:
-                time.sleep(5 * (attempt + 1))
+                time.sleep(5 * (attempt + 1) + random.uniform(0, 2))
                 continue
             log.error("DataForSEO request failed after 3 attempts: %s", e)
             return {g: 0.0 for g in kw_list}
@@ -115,7 +120,7 @@ def fetch_comparison(
                 attempt + 1, _task_code, _tasks[0].get("status_message"),
             )
             if attempt < 2:
-                time.sleep(10 * (attempt + 1))
+                time.sleep(10 * (attempt + 1) + random.uniform(0, 3))
                 continue
             log.error("DataForSEO task error %s persisted after 3 attempts", _task_code)
             return {g: 0.0 for g in kw_list}
