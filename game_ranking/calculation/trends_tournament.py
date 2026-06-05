@@ -47,7 +47,7 @@ GAMES_PER_GROUP      = 8            # games per manual tournament group (UI brac
 TOURNAMENT_GROUP_SIZE = 5           # games per auto-tournament group (= DataForSEO max)
 BATCH_SIZE           = 4            # games per anchor-scoring batch (4 + anchor = 5)
 CALL_SLEEP           = 2.0          # seconds each worker sleeps after its API call
-MAX_PARALLEL_CALLS   = 3            # concurrent DataForSEO requests (~3× speedup)
+MAX_PARALLEL_CALLS   = 2            # concurrent DataForSEO requests — keep low to avoid 40101 Google Trends errors
 
 
 # ── Low-level: single batch, no anchor ───────────────────────────────────────

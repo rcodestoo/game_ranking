@@ -79,6 +79,9 @@ def fetch_comparison(
         "item_types":    ["google_trends_graph"],
     }]
 
+    # 40101 = Google Trends internal server error (transient) — safe to retry
+    _RETRYABLE_TASK_CODES = {40101}
+
     resp_data = None
     for attempt in range(3):
         try:
@@ -94,15 +97,31 @@ def fetch_comparison(
                 time.sleep(wait)
                 continue
             resp.raise_for_status()
-            resp_data = resp.json()
-            break
+            candidate = resp.json()
         except Exception as e:
             log.warning("DataForSEO attempt %d failed: %s", attempt + 1, e)
             if attempt < 2:
                 time.sleep(5 * (attempt + 1))
-            else:
-                log.error("DataForSEO request failed after 3 attempts: %s", e)
-                return {g: 0.0 for g in kw_list}
+                continue
+            log.error("DataForSEO request failed after 3 attempts: %s", e)
+            return {g: 0.0 for g in kw_list}
+
+        # Check task-level status before accepting the response
+        _tasks = candidate.get("tasks", [])
+        _task_code = _tasks[0].get("status_code") if _tasks else None
+        if _task_code in _RETRYABLE_TASK_CODES:
+            log.warning(
+                "DataForSEO attempt %d task error %s: %s — retrying",
+                attempt + 1, _task_code, _tasks[0].get("status_message"),
+            )
+            if attempt < 2:
+                time.sleep(10 * (attempt + 1))
+                continue
+            log.error("DataForSEO task error %s persisted after 3 attempts", _task_code)
+            return {g: 0.0 for g in kw_list}
+
+        resp_data = candidate
+        break
 
     if resp_data is None:
         return {g: 0.0 for g in kw_list}
