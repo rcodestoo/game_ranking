@@ -136,6 +136,10 @@ def render():
     st.divider()
 
     # ── Auto Trends Tournament ────────────────────────────────────────────────
+    # Read appended_since early so the auto-run button can use it before the
+    # Settings widget further down defines the local variable.
+    appended_since = st.session_state.get("tournament_appended_since", dt.date.today())
+
     st.subheader("Auto Trends Tournament")
 
     _anchor = st.session_state.get("trends_anchor")

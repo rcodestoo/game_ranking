@@ -8,6 +8,7 @@ Auth: HTTP Basic (login + password from DataForSEO dashboard).
 
 import json
 import logging
+import time
 import requests
 from pathlib import Path
 
@@ -63,7 +64,11 @@ def fetch_comparison(
     to each other within the batch (same semantics as Google Trends explore).
     Returns 0.0 for every game on any error.
     """
-    kw_list = games[:MAX_KEYWORDS]
+    kw_list = [g for g in games[:MAX_KEYWORDS] if g and g.strip()]
+    if not kw_list:
+        log.warning("DataForSEO: no valid keywords after filtering empty entries")
+        return {g: 0.0 for g in games[:MAX_KEYWORDS]}
+
     date_from, date_to = _date_range()
     payload = [{
         "keywords":      kw_list,
@@ -74,28 +79,44 @@ def fetch_comparison(
         "item_types":    ["google_trends_graph"],
     }]
 
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/keywords_data/google_trends/explore/live",
-            json=payload,
-            auth=(login, password),
-            timeout=90,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        log.error("DataForSEO request failed: %s", e)
+    resp_data = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(
+                f"{BASE_URL}/keywords_data/google_trends/explore/live",
+                json=payload,
+                auth=(login, password),
+                timeout=150,
+            )
+            if resp.status_code == 429:
+                wait = 30 * (attempt + 1)
+                log.warning("DataForSEO rate limited (429), waiting %ds before retry", wait)
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            resp_data = resp.json()
+            break
+        except Exception as e:
+            log.warning("DataForSEO attempt %d failed: %s", attempt + 1, e)
+            if attempt < 2:
+                time.sleep(5 * (attempt + 1))
+            else:
+                log.error("DataForSEO request failed after 3 attempts: %s", e)
+                return {g: 0.0 for g in kw_list}
+
+    if resp_data is None:
         return {g: 0.0 for g in kw_list}
 
     # ── Parse response ────────────────────────────────────────────────────────
-    tasks = data.get("tasks", [])
+    tasks = resp_data.get("tasks", [])
     if not tasks:
         log.warning("DataForSEO: empty tasks array")
         return {g: 0.0 for g in kw_list}
 
     task = tasks[0]
-    if task.get("status_code") != 20000:
-        log.warning("DataForSEO task error %s: %s", task.get("status_code"), task.get("status_message"))
+    status_code = task.get("status_code")
+    if status_code != 20000:
+        log.warning("DataForSEO task error %s: %s", status_code, task.get("status_message"))
         return {g: 0.0 for g in kw_list}
 
     result = (task.get("result") or [None])[0]
@@ -115,10 +136,10 @@ def fetch_comparison(
         return {kw_list[i]: float(averages[i]) for i in range(len(kw_list))}
 
     # Fallback: compute mean from daily data points
-    data = graph_item.get("data") or []
+    trend_points = graph_item.get("data") or []
     sums   = [0.0] * len(kw_list)
     counts = [0]   * len(kw_list)
-    for point in data:
+    for point in trend_points:
         values = point.get("values", [])
         for i, v in enumerate(values):
             if i < len(kw_list) and v is not None:

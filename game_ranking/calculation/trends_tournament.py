@@ -60,9 +60,13 @@ def compare_group_direct(
 ) -> dict[str, float]:
     """
     Compare up to TOURNAMENT_GROUP_SIZE games in a single DataForSEO call.
-    Returns {game: mean_score}. Highest scorer wins.
+    Edition suffixes are stripped before querying so Google Trends gets cleaner names.
+    Returns {game: mean_score} keyed by original names. Highest scorer wins.
     """
-    return fetch_comparison(games[:TOURNAMENT_GROUP_SIZE], login, password, category_code)
+    truncated = games[:TOURNAMENT_GROUP_SIZE]
+    cleaned   = [strip_edition_suffix(g) for g in truncated]
+    raw       = fetch_comparison(cleaned, login, password, category_code)
+    return {orig: raw.get(clean, 0.0) for orig, clean in zip(truncated, cleaned)}
 
 
 # ── Mid-level: anchor-based, multiple batches ─────────────────────────────────
@@ -82,13 +86,15 @@ def compare_group(
     Returns {game: normalised_score} where anchor = 100.
     """
     scores: dict[str, float] = {}
-    batches = [games[i:i + BATCH_SIZE] for i in range(0, len(games), BATCH_SIZE)]
+    batches        = [games[i:i + BATCH_SIZE] for i in range(0, len(games), BATCH_SIZE)]
+    cleaned_anchor = strip_edition_suffix(anchor)
 
     for i, batch in enumerate(batches):
-        raw = fetch_comparison(batch + [anchor], login, password, category_code)
-        anchor_val = raw.get(anchor, 1.0) or 1.0
-        for g in batch:
-            scores[g] = round(raw.get(g, 0.0) / anchor_val * 100, 2)
+        cleaned_batch = [strip_edition_suffix(g) for g in batch]
+        raw           = fetch_comparison(cleaned_batch + [cleaned_anchor], login, password, category_code)
+        anchor_val    = raw.get(cleaned_anchor, 1.0) or 1.0
+        for orig, clean in zip(batch, cleaned_batch):
+            scores[orig] = round(raw.get(clean, 0.0) / anchor_val * 100, 2)
         if i < len(batches) - 1:
             time.sleep(sleep_s)
 
