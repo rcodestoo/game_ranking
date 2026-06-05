@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from calculation.trends_tournament import (
-    run_tournament, run_cross_final, ANCHOR, TOURNAMENT_GROUP_SIZE,
+    run_tournament, run_cross_final, TOURNAMENT_GROUP_SIZE,
 )
 from calculation.dataforseo_trends import load_credentials, save_credentials
 from app.thread_state import _trends_thread_state
@@ -206,7 +206,6 @@ def render():
             ):
                 appended_since = None
         with c3:
-            st.caption(f"**Anchor term:** {ANCHOR}")
             st.caption("**Category:** Computer & Video Games (41) · **Location:** Worldwide · **Timeframe:** past month")
 
     st.divider()
