@@ -7,6 +7,7 @@ Uses DataForSEO Google Trends (replaces pytrends).
 import json
 import time
 import threading
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -108,6 +109,6 @@ def _worker(steam_names, nonsteam_names, login, password):
             "tournament_results": results,
         }
     except Exception as e:
-        _trends_thread_state["result"] = {"error": str(e)}
+        _trends_thread_state["result"] = {"error": f"{e}\n{traceback.format_exc()}"}
     finally:
         _trends_thread_state["running"] = False

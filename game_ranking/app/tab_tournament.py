@@ -65,7 +65,12 @@ def _results_to_df(results: list[dict]) -> pd.DataFrame:
     df = df[~df["score"].isna()].copy()
     df["score"] = df["score"].round(2)
     df["Result"] = df.apply(
-        lambda r: "🏆 Champion" if r["champion"] else ("✅ Advanced" if not r["eliminated"] else "❌ Eliminated"),
+        lambda r: (
+            "🏆 Champion" if r["champion"]
+            else "⚠️ API Error" if r.get("api_failed")
+            else "✅ Advanced" if not r["eliminated"]
+            else "❌ Eliminated"
+        ),
         axis=1,
     )
     return df[["round", "group", "game", "score", "Result"]].rename(columns={
@@ -146,6 +151,10 @@ def render():
     if _anchor:
         st.success(f"🏆 Current anchor: **{_anchor}**")
 
+    _pipeline_err = st.session_state.get("trends_pipeline_error")
+    if _pipeline_err:
+        st.error(f"Last pipeline run failed: {_pipeline_err}")
+
     if _trends_thread_state["running"]:
         st.info(f"🔄 {_trends_thread_state.get('progress', 'Running...')}")
         time.sleep(3)
@@ -165,7 +174,7 @@ def render():
         with st.expander("📋 Last Auto-Run Bracket Results", expanded=False):
             df_auto = _results_to_df(_auto_results)
             if not df_auto.empty:
-                st.dataframe(df_auto, use_container_width=True, hide_index=True,
+                st.dataframe(df_auto, width="stretch", hide_index=True,
                              column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
 
     st.divider()
@@ -221,7 +230,7 @@ def render():
         with st.expander("Games entering tournament", expanded=False):
             st.write(", ".join(steam_games))
 
-        if st.button("▶ Run Steam Tournament", key="run_steam_tournament", use_container_width=True):
+        if st.button("▶ Run Steam Tournament", key="run_steam_tournament", width="stretch"):
             st.session_state.pop("tournament_steam_results", None)
             st.session_state.pop("tournament_steam_champion", None)
 
@@ -253,8 +262,11 @@ def render():
             st.success(f"🏆 Steam Champion: **{champ}**")
         df_res = _results_to_df(st.session_state.tournament_steam_results)
         if not df_res.empty:
-            st.dataframe(df_res, use_container_width=True, hide_index=True,
+            st.dataframe(df_res, width="stretch", hide_index=True,
                          column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
+            _failed = df_res[df_res["Result"] == "⚠️ API Error"]
+            if not _failed.empty:
+                st.warning(f"{len(_failed)} game(s) in groups where the API returned all zeros — scores may be unreliable.")
 
     st.divider()
 
@@ -269,7 +281,7 @@ def render():
         with st.expander("Games entering tournament", expanded=False):
             st.write(", ".join(nonsteam_games))
 
-        if st.button("▶ Run Non-Steam Tournament", key="run_nonsteam_tournament", use_container_width=True):
+        if st.button("▶ Run Non-Steam Tournament", key="run_nonsteam_tournament", width="stretch"):
             st.session_state.pop("tournament_nonsteam_results", None)
             st.session_state.pop("tournament_nonsteam_champion", None)
 
@@ -301,8 +313,11 @@ def render():
             st.success(f"🏆 Non-Steam Champion: **{champ}**")
         df_res = _results_to_df(st.session_state.tournament_nonsteam_results)
         if not df_res.empty:
-            st.dataframe(df_res, use_container_width=True, hide_index=True,
+            st.dataframe(df_res, width="stretch", hide_index=True,
                          column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
+            _failed = df_res[df_res["Result"] == "⚠️ API Error"]
+            if not _failed.empty:
+                st.warning(f"{len(_failed)} game(s) in groups where the API returned all zeros — scores may be unreliable.")
 
     st.divider()
 
@@ -317,7 +332,7 @@ def render():
     else:
         st.caption(f"**Steam champion:** {steam_champ} vs **Non-Steam champion:** {ns_champ}")
 
-        if st.button("▶ Run Grand Final", key="run_grand_final", use_container_width=True):
+        if st.button("▶ Run Grand Final", key="run_grand_final", width="stretch"):
             st.session_state.pop("tournament_final_result", None)
             with st.spinner(f"Comparing {steam_champ} vs {ns_champ}…"):
                 result = run_cross_final(steam_champ, ns_champ, login=login, password=password)

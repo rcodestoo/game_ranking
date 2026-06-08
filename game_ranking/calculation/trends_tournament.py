@@ -46,7 +46,7 @@ ANCHOR               = "Minecraft"   # stable reference for anchor-based scoring
 GAMES_PER_GROUP      = 8            # games per manual tournament group (UI brackets)
 TOURNAMENT_GROUP_SIZE = 5           # games per auto-tournament group (= DataForSEO max)
 BATCH_SIZE           = 4            # games per anchor-scoring batch (4 + anchor = 5)
-CALL_SLEEP           = 2.0          # seconds each worker sleeps after its API call
+CALL_SLEEP           = 5.0          # seconds each worker sleeps after its API call
 MAX_PARALLEL_CALLS   = 2            # concurrent DataForSEO requests — keep low to avoid 40101 Google Trends errors
 
 
@@ -106,14 +106,20 @@ def compare_group(
 def _run_group_worker(args: tuple) -> tuple:
     """
     Thread worker: fetch scores for one group, then sleep to pace API calls.
-    Returns (g_idx, group, scores_or_None).  scores=None means a bye.
+    Returns (g_idx, group, scores_or_None, api_failed).
+    scores=None means a bye; api_failed=True means all scores were zero after retry.
     """
     g_idx, group, login, password, category_code, sleep_s = args
     if len(group) == 1:
-        return g_idx, group, None
+        return g_idx, group, None, False
     scores = compare_group_direct(group, login, password, category_code)
-    time.sleep(sleep_s)   # each worker paces itself — same rate as before, just parallel
-    return g_idx, group, scores
+    # All-zero likely means a queue timeout or quota hit — flag it, don't retry
+    # (retrying just submits another task into the same backed-up queue).
+    api_failed = bool(scores and all(v == 0.0 for v in scores.values()))
+    if api_failed:
+        log.warning("Group %d all-zero scores — likely API timeout or quota hit, flagging as failed", g_idx + 1)
+    time.sleep(sleep_s)
+    return g_idx, group, scores, api_failed
 
 
 # ── High-level: full tournament ───────────────────────────────────────────────
@@ -166,8 +172,8 @@ def run_tournament(
                 for args in worker_args
             }
             for future in as_completed(futures):
-                g_idx, group, scores = future.result()
-                group_results[g_idx] = (group, scores)
+                g_idx, group, scores, api_failed = future.result()
+                group_results[g_idx] = (group, scores, api_failed)
                 if progress_callback:
                     done = len(group_results)
                     progress_callback(
@@ -177,12 +183,12 @@ def run_tournament(
         # Reconstruct next pool in original group order
         next_pool: list[str] = []
         for g_idx in range(len(groups)):
-            group, scores = group_results[g_idx]
+            group, scores, api_failed = group_results[g_idx]
             if scores is None:  # bye
                 results.append({
                     "game": group[0], "score": None,
                     "round": round_num, "group": g_idx + 1,
-                    "eliminated": False, "champion": False,
+                    "eliminated": False, "champion": False, "api_failed": False,
                 })
                 next_pool.append(group[0])
             else:
@@ -196,6 +202,7 @@ def run_tournament(
                         "group":      g_idx + 1,
                         "eliminated": game != winner,
                         "champion":   False,
+                        "api_failed": api_failed,
                     })
 
         pool = next_pool

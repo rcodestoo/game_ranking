@@ -25,8 +25,8 @@ MAX_KEYWORDS   = 5
 
 TASK_POST_URL = f"{BASE_URL}/keywords_data/google_trends/explore/task_post"
 TASK_GET_URL  = f"{BASE_URL}/keywords_data/google_trends/explore/task_get"
-POLL_INTERVAL = 5    # seconds between task_get polls
-POLL_TIMEOUT  = 180  # total seconds to wait for a task to complete
+POLL_INTERVAL = 10   # seconds between task_get polls
+POLL_TIMEOUT  = 900  # total seconds to wait for a task to complete (15 min — DataForSEO queues can run slow under load)
 POST_RETRIES  = 3    # attempts to submit the task
 
 CREDS_FILE = Path(__file__).parent.parent / "cache" / "dataforseo_creds.json"
@@ -134,7 +134,7 @@ def _poll_task(
     Returns the completed tasks[0] dict on success, None on failure or timeout.
     """
     # Status codes that mean "still working — keep polling"
-    _IN_PROGRESS = {20100, 20200}
+    _IN_PROGRESS = {20100, 20200, 40600, 40601, 40602}
     # Status codes that mean the task failed and polling is pointless
     _TERMINAL_ERRORS = {40101, 40400}
 

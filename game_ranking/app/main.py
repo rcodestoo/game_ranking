@@ -130,7 +130,7 @@ else:
     st.sidebar.caption("Using default Non-Steam CSV.")
 
 st.sidebar.divider()
-if st.sidebar.button("🔄 Reset to Defaults", use_container_width=True):
+if st.sidebar.button("🔄 Reset to Defaults", width="stretch"):
     load_defaults()
     st.rerun()
 
@@ -222,7 +222,10 @@ if "nonsteam_trends" not in st.session_state:
 if _trends_thread_state["result"] is not None:
     _res = _trends_thread_state["result"]
     _trends_thread_state["result"] = None
-    if "error" not in _res:
+    if "error" in _res:
+        st.session_state["trends_pipeline_error"] = _res["error"]
+    else:
+        st.session_state.pop("trends_pipeline_error", None)
         st.session_state.nonsteam_trends = _res["scores"]
         st.session_state.trends_anchor = _res["anchor"]
         st.session_state.tournament_results_auto = _res["tournament_results"]
