@@ -108,7 +108,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
                         return pd.to_datetime(s, dayfirst=dayfirst, errors='coerce')
                     except (ValueError, TypeError):
                         pass
-            return pd.to_datetime(s, dayfirst=True, errors='coerce')
+            return pd.to_datetime(s, errors='coerce', format='mixed', dayfirst=True)
         return series.apply(_parse)
 
     for _dc in ['YouTube ReleaseDate', 'Release Date']:
@@ -234,9 +234,9 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
 
         btn_c1, btn_c2 = st.columns([1, 1])
         with btn_c1:
-            apply_ns = st.button("Apply Filters", key="ns_apply", use_container_width=True)
+            apply_ns = st.button("Apply Filters", key="ns_apply", width="stretch")
         with btn_c2:
-            if st.button("Reset Filters", key="ns_revert", use_container_width=True):
+            if st.button("Reset Filters", key="ns_revert", width="stretch"):
                 st.session_state.ns_reset_filters = True
                 st.rerun()
 
@@ -247,7 +247,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     df_filtered_ns = df_non_steam_ranked.copy()
 
     if 'Release Date' in df_filtered_ns.columns:
-        rel_dates = pd.to_datetime(df_filtered_ns['Release Date'], errors='coerce')
+        rel_dates = pd.to_datetime(df_filtered_ns['Release Date'], errors='coerce', format='mixed', dayfirst=True)
         in_range = rel_dates.between(pd.Timestamp(ns_start), pd.Timestamp(ns_end))
         df_filtered_ns = df_filtered_ns[rel_dates.isna() | in_range]
 
@@ -269,7 +269,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
         st.subheader("Priority Rankings")
     with btn_col:
         if st.button("📊 Refresh Trends", key="fetch_nonsteam_trends_filter",
-                     help="Fetch trends for all stale games in the current filter", use_container_width=True):
+                     help="Fetch trends for all stale games in the current filter", width="stretch"):
             games = df_filtered_ns["Game Title"].dropna().unique().tolist()
             _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
             games_to_fetch = filter_stale_trends_games(games, _cached_ts)
@@ -351,7 +351,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
 
     for col in ['Release Date', 'YouTube ReleaseDate']:
         if col in df_nonsteam_display.columns:
-            df_nonsteam_display[col] = pd.to_datetime(df_nonsteam_display[col], errors='coerce').dt.strftime('%d/%m/%Y').fillna('N/A')
+            df_nonsteam_display[col] = pd.to_datetime(df_nonsteam_display[col], errors='coerce', format='mixed', dayfirst=True).dt.strftime('%d/%m/%Y').fillna('N/A')
 
     if "date_appended" in df_filtered_ns.columns and "date_appended" not in cols_to_show:
         df_nonsteam_display["date_appended"] = df_filtered_ns["date_appended"].values
@@ -369,7 +369,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     df_nonsteam_display.insert(0, "Fetch", False)
     _ns_edited = st.data_editor(
         df_nonsteam_display,
-        use_container_width=True,
+        width="stretch",
         hide_index=False,
         disabled=[c for c in df_nonsteam_display.columns if c != "Fetch"],
         column_config={
@@ -391,7 +391,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
             f"📊 Fetch Trends for Selected ({len(_ns_selected)})",
             key="fetch_nonsteam_trends",
             disabled=not _ns_selected,
-            use_container_width=True,
+            width="stretch",
         ):
             _anchor_info = load_tournament_anchor()
             if not _anchor_info:

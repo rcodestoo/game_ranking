@@ -113,7 +113,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
         with f_col1:
             st.markdown("**Release Date**")
             if 'ReleaseDate' in df_ranked.columns:
-                df_ranked['ReleaseDate'] = pd.to_datetime(df_ranked['ReleaseDate'], errors='coerce', dayfirst=True)
+                df_ranked['ReleaseDate'] = pd.to_datetime(df_ranked['ReleaseDate'], errors='coerce', format='mixed', dayfirst=True)
             start_date = st.date_input(
                 "From", value=st.session_state.get("steam_start_date", global_date_min),
                 min_value=global_date_min, max_value=global_date_max,
@@ -172,9 +172,9 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
         btn_c1, btn_c2 = st.columns([1, 1])
         with btn_c1:
-            apply_steam = st.button("Apply Filters", key="steam_apply", use_container_width=True)
+            apply_steam = st.button("Apply Filters", key="steam_apply", width="stretch")
         with btn_c2:
-            if st.button("Reset Filters", key="steam_revert", use_container_width=True):
+            if st.button("Reset Filters", key="steam_revert", width="stretch"):
                 st.session_state.steam_reset_filters = True
                 st.rerun()
 
@@ -185,7 +185,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
     df_filtered_steam = df_ranked.copy()
 
     if 'ReleaseDate' in df_filtered_steam.columns:
-        rd = pd.to_datetime(df_filtered_steam['ReleaseDate'], errors='coerce', dayfirst=True)
+        rd = pd.to_datetime(df_filtered_steam['ReleaseDate'], errors='coerce', format='mixed', dayfirst=True)
         df_filtered_steam = df_filtered_steam[rd.between(pd.Timestamp(start_date), pd.Timestamp(end_date)) | rd.isna()]
 
     if selected_genres and 'Genres' in df_filtered_steam.columns:
@@ -221,7 +221,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             st.subheader("Priority Rankings")
         with btn_col:
             if st.button("📊 Refresh Trends", key="fetch_steam_trends_filter",
-                         help="Fetch trends for all stale games in the current filter", use_container_width=True):
+                         help="Fetch trends for all stale games in the current filter", width="stretch"):
                 games = df_filtered_steam["Name"].dropna().unique().tolist()
                 _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
                 games_to_fetch = filter_stale_trends_games(games, _cached_ts)
@@ -291,7 +291,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             if col in df_display.columns:
                 df_display[col] = df_display[col].round(2)
 
-        _parsed_dates = pd.to_datetime(df_display['ReleaseDate'], errors='coerce', dayfirst=True)
+        _parsed_dates = pd.to_datetime(df_display['ReleaseDate'], errors='coerce', format='mixed', dayfirst=True)
         df_display['ReleaseDate'] = _parsed_dates.dt.strftime('%d/%m/%Y').fillna('Unknown')
         df_display['Developers'] = df_display['Developers'].apply(
             lambda x: ', '.join(x) if isinstance(x, list) else str(x)
@@ -310,7 +310,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
         df_display.insert(0, "Fetch", False)
         _edited = st.data_editor(
             df_display,
-            use_container_width=True,
+            width="stretch",
             hide_index=False,
             disabled=[c for c in df_display.columns if c != "Fetch"],
             column_config={
@@ -331,7 +331,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                 f"📊 Fetch Trends for Selected ({len(_selected)})",
                 key="fetch_steam_trends",
                 disabled=not _selected,
-                use_container_width=True,
+                width="stretch",
             ):
                 _anchor_info = load_tournament_anchor()
                 if not _anchor_info:
@@ -376,7 +376,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
     with devlist_tab:
         st.caption("Internal developer ranking based on average revenue per game.")
-        st.dataframe(st.session_state.dev_list, use_container_width=True, hide_index=True)
+        st.dataframe(st.session_state.dev_list, width="stretch", hide_index=True)
 
         with st.expander("📊 SteamSpy vs VG Insights — Revenue Comparison"):
             dev_list_df = st.session_state.dev_list
@@ -452,7 +452,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                     )
                     st.dataframe(
                         comparison,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
                             "VGI Revenue":     st.column_config.NumberColumn("VGI Revenue ($)", format="$%,.0f"),
