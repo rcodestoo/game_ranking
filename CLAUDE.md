@@ -36,9 +36,11 @@ repos/
 | `game_ranking/pipelines/nonsteam_pipeline.py` | SteamCommunityGroupScraper driver; `append_from_uploaded_nonsteam_csv()` |
 | `game_ranking/pipelines/state.py` | Scrape window tracking |
 | `game_ranking/pipelines/normalizer.py` | Encoding-safe CSV reading + per-upload normalization for Steam/Non-Steam |
-| `game_ranking/pipelines/trends_pipeline.py` | Background trends pipeline; runs tournament to find anchor champion, then scores all games |
+| `game_ranking/pipelines/trends_pipeline.py` | Old blocking tournament pipeline; `load_tournament_anchor()` / `save_tournament_anchor()` still used by all tabs |
+| `game_ranking/pipelines/tournament_state.py` | **NEW** — tournament state load/save/mutate; owns `cache/tournament_state.json` |
+| `game_ranking/pipelines/tournament_pipeline.py` | **NEW** — `start_tournament()`, `submit_round()`, `collect_results()`; batch-POST per round |
 | `game_ranking/calculation/trends_tournament.py` | Google Trends tournament engine (anchor-based comparison, groups of 8) |
-| `game_ranking/app/tab_tournament.py` | Trends Tournament tab UI (multi-round bracket + cross-final Steam vs Non-Steam) |
+| `game_ranking/app/tab_tournament.py` | Trends Tournament tab UI — auto-tournament (new batch/poll flow) + manual brackets |
 | `SteamCommunityGroupScraper/script.py` | Non-steam scraper (Selenium + IGDB + YouTube) |
 | `SteamCommunityGroupScraper/games.json` | Input game list (~846 entries) |
 
@@ -51,7 +53,8 @@ game_ranking/raw/     — Raw CSVs (see schema below)
 game_ranking/data/    — Excel files + inventory CSV
 game_ranking/cache/   — nonsteam_trends_cache.csv, steam_appid_cache.json,
                         player_counts_history.csv, steamspy_cache.csv, scraper_state.json,
-                        dataforseo_creds.json, tournament_anchor.json
+                        dataforseo_creds.json, tournament_anchor.json, tournament_state.json,
+
 ```
 
 ---
@@ -111,7 +114,11 @@ SteamStatus, date_appended
 - Deduplication key: **AppId** for Steam, **Game Title** (case-insensitive) for Non-Steam
 - On upload, existing rows with matching key are **overwritten**; new rows are **appended**
 - Output always written to a date-stamped file (`raw_steam_YYYY-MM-DD.csv`)
-- **Trends backend**: `trends_pipeline.py` uses DataForSEO (`dataforseo_trends.py`); legacy pytrends files (`scraper.py`, `single_g_trends_scraper.py`, `test_proxy_rotation.py`) have been deleted
+- **Trends backend**: DataForSEO (`dataforseo_trends.py`); HTTP Basic auth
+- **Tournament flow** (new): batch-POST per round; state persisted in `cache/tournament_state.json`; results collected via "Collect Results" button (polls `tasks_ready` + `task_get`); pingback_url set on every task; each bracket runs standard knockout until pool ≤ 5, final round top-2 = finalists; anchor pool = Steam top-2 + Non-Steam top-2 + all bye-games; user selects anchor from pool
+- **Tournament state file**: `cache/tournament_state.json` — survives restarts, tracks rounds/tasks/scores/finalists per bracket
+- **Anchor persistence**: `cache/tournament_anchor.json` — set from anchor pool selection, used by manual Fetch Trends buttons in other tabs
+- **Old blocking pipeline** (`trends_pipeline.py`) still present; `load_tournament_anchor()` / `save_tournament_anchor()` reused by new pipeline and all tabs
 - DataForSEO credentials stored in `cache/dataforseo_creds.json` (login + password, HTTP Basic auth)
 
 ---

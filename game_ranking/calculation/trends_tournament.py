@@ -46,8 +46,8 @@ ANCHOR               = "Minecraft"   # stable reference for anchor-based scoring
 GAMES_PER_GROUP      = 8            # games per manual tournament group (UI brackets)
 TOURNAMENT_GROUP_SIZE = 5           # games per auto-tournament group (= DataForSEO max)
 BATCH_SIZE           = 4            # games per anchor-scoring batch (4 + anchor = 5)
-CALL_SLEEP           = 5.0          # seconds each worker sleeps after its API call
-MAX_PARALLEL_CALLS   = 2            # concurrent DataForSEO requests — keep low to avoid 40101 Google Trends errors
+CALL_SLEEP           = 15.0         # seconds each worker sleeps after its API call
+MAX_PARALLEL_CALLS   = 1            # one request at a time — Google Trends queue saturates fast under parallel load
 
 
 # ── Low-level: single batch, no anchor ───────────────────────────────────────
@@ -109,15 +109,21 @@ def _run_group_worker(args: tuple) -> tuple:
     Returns (g_idx, group, scores_or_None, api_failed).
     scores=None means a bye; api_failed=True means all scores were zero after retry.
     """
-    g_idx, group, login, password, category_code, sleep_s = args
+    g_idx, group, login, password, category_code, sleep_s, label = args
     if len(group) == 1:
+        log.info("[%s] Round group %d: BYE → %s", label, g_idx + 1, group[0])
         return g_idx, group, None, False
+    log.info("[%s] Round group %d: comparing %s", label, g_idx + 1, " | ".join(group))
     scores = compare_group_direct(group, login, password, category_code)
     # All-zero likely means a queue timeout or quota hit — flag it, don't retry
     # (retrying just submits another task into the same backed-up queue).
     api_failed = bool(scores and all(v == 0.0 for v in scores.values()))
     if api_failed:
-        log.warning("Group %d all-zero scores — likely API timeout or quota hit, flagging as failed", g_idx + 1)
+        log.warning("[%s] Round group %d all-zero scores — likely API timeout or quota hit", label, g_idx + 1)
+    else:
+        score_str = ", ".join(f"{g}={scores.get(g, 0.0):.1f}" for g in group)
+        winner = max(scores, key=scores.get) if scores else group[0]
+        log.info("[%s] Round group %d scores: %s → winner: %s", label, g_idx + 1, score_str, winner)
     time.sleep(sleep_s)
     return g_idx, group, scores, api_failed
 
@@ -131,6 +137,7 @@ def run_tournament(
     category_code: int = GAMES_CATEGORY,
     sleep_s: float = CALL_SLEEP,
     progress_callback=None,
+    label: str = "Tournament",
 ) -> list[dict]:
     """
     Run a multi-round DataForSEO Trends tournament.
@@ -156,11 +163,14 @@ def run_tournament(
     pool = list(games)
     round_num = 1
 
+    log.info("[%s] Tournament starting: %d games, groups of %d", label, len(pool), TOURNAMENT_GROUP_SIZE)
+
     while len(pool) > 1:
         groups = [pool[i:i + TOURNAMENT_GROUP_SIZE] for i in range(0, len(pool), TOURNAMENT_GROUP_SIZE)]
+        log.info("[%s] Round %d: %d games → %d group(s)", label, round_num, len(pool), len(groups))
 
         worker_args = [
-            (g_idx, group, login, password, category_code, sleep_s)
+            (g_idx, group, login, password, category_code, sleep_s, label)
             for g_idx, group in enumerate(groups)
         ]
 
@@ -214,8 +224,55 @@ def run_tournament(
             if r["game"] == champion and not r["eliminated"]:
                 r["champion"] = True
                 break
+        log.info("[%s] Tournament complete — champion: %s", label, champion)
 
     return results
+
+
+# ── Anchor selection helpers ─────────────────────────────────────────────────
+
+def get_runner_up(cross_final_result: dict) -> str:
+    """
+    Return the runner-up (cross-final loser = 2nd most popular game overall).
+    Used as anchor: the most popular game would push all others near 0;
+    the 2nd most popular gives meaningful score spread.
+    Falls back to "Minecraft" if result is None or malformed.
+    """
+    if not cross_final_result:
+        return "Minecraft"
+    winner = cross_final_result.get("winner")
+    steam  = cross_final_result.get("steam_champion", "")
+    ns     = cross_final_result.get("nonsteam_champion", "")
+    if winner == steam:
+        return ns if ns else steam
+    return steam if steam else ns
+
+
+def get_runner_up_from_bracket(results: list[dict], champion: str) -> str | None:
+    """
+    Extract the runner-up from a single-bracket tournament (used when only
+    one side has games and no cross-final can run).
+    Returns the highest-scoring eliminated game in the final round,
+    falling back to the penultimate round if needed.
+    Returns None if no runner-up can be found.
+    """
+    if not results:
+        return None
+    max_round = max(r["round"] for r in results)
+    final_losers = [
+        r for r in results
+        if r["round"] == max_round and r.get("eliminated") and r["game"] != champion
+    ]
+    if final_losers:
+        return max(final_losers, key=lambda r: r.get("score") or 0.0)["game"]
+    if max_round > 1:
+        semi_losers = [
+            r for r in results
+            if r["round"] == max_round - 1 and r.get("eliminated")
+        ]
+        if semi_losers:
+            return max(semi_losers, key=lambda r: r.get("score") or 0.0)["game"]
+    return None
 
 
 # ── Cross-final: Steam champion vs Non-Steam champion ────────────────────────
@@ -225,25 +282,22 @@ def run_cross_final(
     nonsteam_champion: str,
     login: str,
     password: str,
-    anchor: str = ANCHOR,
     category_code: int = GAMES_CATEGORY,
 ) -> dict:
     """
-    Direct comparison between the Steam and Non-Steam tournament winners
-    using anchor-based normalisation for a fair cross-comparison.
+    Direct comparison between the Steam and Non-Steam tournament winners.
 
     Returns:
       winner            – name of the overall winner
       steam_champion    – Steam entrant
       nonsteam_champion – Non-Steam entrant
-      steam_score       – normalised score
-      nonsteam_score    – normalised score
+      steam_score       – raw trends score
+      nonsteam_score    – raw trends score
     """
-    scores = compare_group(
+    scores = compare_group_direct(
         [steam_champion, nonsteam_champion],
         login=login,
         password=password,
-        anchor=anchor,
         category_code=category_code,
     )
     s  = scores.get(steam_champion, 0.0)

@@ -5,9 +5,8 @@ Compares game names within category 41 (Computer & Video Games), worldwide, past
 Max 5 keywords per request (Google Trends hard limit).
 Auth: HTTP Basic (login + password from DataForSEO dashboard).
 
-Uses the task-based endpoint (task_post → task_get) instead of the live endpoint.
-This delegates Google Trends rate-limiting to DataForSEO's internal queue, eliminating
-40101 and 500 errors that occur when the live endpoint is hit under load.
+Uses the task-based endpoint (task_post → task_get).
+This delegates Google Trends rate-limiting to DataForSEO's internal queue.
 """
 
 import json
@@ -22,11 +21,13 @@ log = logging.getLogger(__name__)
 BASE_URL       = "https://api.dataforseo.com/v3"
 GAMES_CATEGORY = 41   # Computer & Video Games
 MAX_KEYWORDS   = 5
+MAX_TASKS_PER_POST = 100  # DataForSEO hard limit — >100 tasks per POST returns error 40006
 
-TASK_POST_URL = f"{BASE_URL}/keywords_data/google_trends/explore/task_post"
-TASK_GET_URL  = f"{BASE_URL}/keywords_data/google_trends/explore/task_get"
+TASK_POST_URL   = f"{BASE_URL}/keywords_data/google_trends/explore/task_post"
+TASK_GET_URL    = f"{BASE_URL}/keywords_data/google_trends/explore/task_get"
+TASKS_READY_URL = f"{BASE_URL}/keywords_data/google_trends/explore/tasks_ready"
 POLL_INTERVAL = 10   # seconds between task_get polls
-POLL_TIMEOUT  = 900  # total seconds to wait for a task to complete (15 min — DataForSEO queues can run slow under load)
+POLL_TIMEOUT  = 120  # total seconds to wait for a task to complete (2 min — fail fast so progress updates appear promptly)
 POST_RETRIES  = 3    # attempts to submit the task
 
 CREDS_FILE = Path(__file__).parent.parent / "cache" / "dataforseo_creds.json"
@@ -149,7 +150,7 @@ def _poll_task(
             resp = requests.get(
                 f"{TASK_GET_URL}/{task_id}",
                 auth=(login, password),
-                timeout=15,
+                timeout=30,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -193,7 +194,146 @@ def _poll_task(
     return None
 
 
+# ── Bulk task submission ──────────────────────────────────────────────────────
+
+def post_tasks_bulk(
+    task_payloads: list[dict],
+    login: str,
+    password: str,
+) -> list[str | None]:
+    """
+    Submit up to MAX_TASKS_PER_POST task objects in a single POST call.
+
+    Per DataForSEO docs: send all tasks as a JSON array (max 100 per call).
+    Returns a list of task_id strings aligned by index (None for failed tasks).
+    Caller must chunk if len(task_payloads) > MAX_TASKS_PER_POST.
+    """
+    if not task_payloads:
+        return []
+    chunk = task_payloads[:MAX_TASKS_PER_POST]
+    task_ids: list[str | None] = []
+
+    for attempt in range(POST_RETRIES):
+        try:
+            resp = requests.post(
+                TASK_POST_URL,
+                json=chunk,
+                auth=(login, password),
+                timeout=30,
+            )
+            if resp.status_code == 429:
+                wait = 30 * (attempt + 1)
+                log.warning("DataForSEO rate limited (429), waiting %ds", wait)
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            if _is_dns_error(e):
+                log.error("DataForSEO DNS error in post_tasks_bulk")
+                return []
+            log.warning("post_tasks_bulk attempt %d: %s", attempt + 1, e)
+            if attempt < POST_RETRIES - 1:
+                time.sleep(5 * (attempt + 1) + random.uniform(0, 2))
+                continue
+            return []
+
+        for task in data.get("tasks", []):
+            tid = task.get("id")
+            sc  = task.get("status_code")
+            if sc in (20100, 20000) and tid:
+                task_ids.append(tid)
+            else:
+                log.warning("post_tasks_bulk task error %s: %s", sc, task.get("status_message"))
+                task_ids.append(None)
+        break
+
+    return task_ids
+
+
+def fetch_tasks_ready(login: str, password: str) -> set[str]:
+    """
+    GET /v3/keywords_data/google_trends/explore/tasks_ready.
+    Returns the set of task_id strings DataForSEO has completed.
+    Returns empty set on any error.
+    """
+    try:
+        resp = requests.get(TASKS_READY_URL, auth=(login, password), timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.warning("fetch_tasks_ready failed: %s", e)
+        return set()
+
+    ready_ids: set[str] = set()
+    for task in data.get("tasks", []):
+        for item in (task.get("result") or []):
+            tid = item.get("id")
+            if tid:
+                ready_ids.add(tid)
+    return ready_ids
+
+
+def fetch_task_result(
+    task_id: str,
+    kw_list: list[str],
+    login: str,
+    password: str,
+) -> dict[str, float]:
+    """
+    Fetch and parse a single completed task result.
+    Task must already appear in tasks_ready — the first _poll_task call
+    will return status 20000 immediately without looping.
+    Returns {keyword: score} or all-zeros on failure.
+    """
+    task = _poll_task(task_id, login, password)
+    if task is None:
+        return {g: 0.0 for g in kw_list}
+    parsed = _parse_task(task, kw_list)
+    return parsed if parsed is not None else {g: 0.0 for g in kw_list}
+
+
 # ── Core fetch ────────────────────────────────────────────────────────────────
+
+def _parse_task(task: dict, kw_list: list[str]) -> dict[str, float] | None:
+    """
+    Extract {keyword: score} from a completed DataForSEO task dict.
+    Returns None if the task result is missing or malformed.
+    """
+    status_code = task.get("status_code")
+    if status_code != 20000:
+        log.warning("DataForSEO task error %s: %s", status_code, task.get("status_message"))
+        return None
+
+    result = (task.get("result") or [None])[0]
+    if not result:
+        log.warning("DataForSEO: null result")
+        return None
+
+    items = result.get("items") or []
+    graph_item = next((i for i in items if i.get("type") == "google_trends_graph"), None)
+    if not graph_item:
+        log.warning("DataForSEO: no google_trends_graph in items")
+        return None
+
+    averages = graph_item.get("averages")
+    if averages and len(averages) == len(kw_list):
+        return {kw_list[i]: float(averages[i]) for i in range(len(kw_list))}
+
+    trend_points = graph_item.get("data") or []
+    sums   = [0.0] * len(kw_list)
+    counts = [0]   * len(kw_list)
+    for point in trend_points:
+        values = point.get("values", [])
+        for i, v in enumerate(values):
+            if i < len(kw_list) and v is not None:
+                sums[i]   += float(v)
+                counts[i] += 1
+    return {
+        kw_list[i]: round(sums[i] / counts[i], 2) if counts[i] > 0 else 0.0
+        for i in range(len(kw_list))
+    }
+
 
 def fetch_comparison(
     games: list[str],
@@ -202,12 +342,10 @@ def fetch_comparison(
     category_code: int = GAMES_CATEGORY,
 ) -> dict[str, float]:
     """
-    Compare up to 5 game names via DataForSEO Google Trends (task-based endpoint).
+    Compare up to 5 game names via DataForSEO Google Trends (task queue).
     Worldwide, past 30 days, category 41 (Computer & Video Games).
 
-    Returns {game_name: mean_interest_score} where scores are 0-100 relative
-    to each other within the batch (same semantics as Google Trends explore).
-    Returns 0.0 for every game on any error.
+    Returns {game_name: mean_interest_score} (0-100). Returns 0.0 on error.
     """
     kw_list = [g for g in games[:MAX_KEYWORDS] if g and g.strip()]
     if not kw_list:
@@ -224,52 +362,23 @@ def fetch_comparison(
         "item_types":    ["google_trends_graph"],
     }]
 
-    # Step 1: Submit task
+    log.info("DataForSEO task queue: submitting for %s", kw_list)
+
     task_id = _post_task(payload, login, password)
     if task_id is None:
-        log.error("DataForSEO: failed to submit task for keywords: %s", kw_list)
+        log.error("DataForSEO task queue: failed to submit task for %s", kw_list)
         return {g: 0.0 for g in kw_list}
 
-    # Step 2: Poll for result
+    log.info("DataForSEO task queue: task %s submitted, polling...", task_id)
     task = _poll_task(task_id, login, password)
     if task is None:
-        log.error("DataForSEO: task %s did not complete successfully", task_id)
+        log.error("DataForSEO task queue: task %s did not complete successfully", task_id)
         return {g: 0.0 for g in kw_list}
 
-    # ── Parse response ────────────────────────────────────────────────────────
-    status_code = task.get("status_code")
-    if status_code != 20000:
-        log.warning("DataForSEO task error %s: %s", status_code, task.get("status_message"))
-        return {g: 0.0 for g in kw_list}
-
-    result = (task.get("result") or [None])[0]
-    if not result:
-        log.warning("DataForSEO: null result")
-        return {g: 0.0 for g in kw_list}
-
-    items = result.get("items") or []
-    graph_item = next((i for i in items if i.get("type") == "google_trends_graph"), None)
-    if not graph_item:
-        log.warning("DataForSEO: no google_trends_graph in items")
-        return {g: 0.0 for g in kw_list}
-
-    # Use pre-computed averages if present (indexed by keyword position)
-    averages = graph_item.get("averages")
-    if averages and len(averages) == len(kw_list):
-        return {kw_list[i]: float(averages[i]) for i in range(len(kw_list))}
-
-    # Fallback: compute mean from daily data points
-    trend_points = graph_item.get("data") or []
-    sums   = [0.0] * len(kw_list)
-    counts = [0]   * len(kw_list)
-    for point in trend_points:
-        values = point.get("values", [])
-        for i, v in enumerate(values):
-            if i < len(kw_list) and v is not None:
-                sums[i]   += float(v)
-                counts[i] += 1
-
-    return {
-        kw_list[i]: round(sums[i] / counts[i], 2) if counts[i] > 0 else 0.0
-        for i in range(len(kw_list))
-    }
+    parsed = _parse_task(task, kw_list)
+    if parsed is not None:
+        score_str = ", ".join(f"{k}={v:.1f}" for k, v in parsed.items())
+        log.info("DataForSEO task queue: task %s complete — %s", task_id, score_str)
+        return parsed
+    log.error("DataForSEO task queue: task %s parse failed", task_id)
+    return {g: 0.0 for g in kw_list}

@@ -104,7 +104,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             _is_selected = st.session_state.inv_status_quick_filter == _val
             if st.button(_label, key=f"inv_qf_{_label}",
                          type="primary" if _is_selected else "secondary",
-                         use_container_width=True):
+                         width="stretch"):
                 st.session_state.inv_status_quick_filter = _val
                 st.rerun()
 
@@ -150,9 +150,9 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
         btn_c1, btn_c2 = st.columns([1, 1])
         with btn_c1:
-            apply_inv = st.button("Apply Filters", key="inv_apply", use_container_width=True)
+            apply_inv = st.button("Apply Filters", key="inv_apply", width="stretch")
         with btn_c2:
-            if st.button("Reset Filters", key="inv_revert", use_container_width=True):
+            if st.button("Reset Filters", key="inv_revert", width="stretch"):
                 st.session_state.inv_reset_filters = True
                 st.rerun()
 
@@ -201,16 +201,16 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
     if not st.session_state.inv_edit_mode:
         with btn_col:
             st.markdown("<div style='padding-top: 28px'>", unsafe_allow_html=True)
-            if st.button("✏️ Edit", key="inv_edit_btn", use_container_width=True):
+            if st.button("✏️ Edit", key="inv_edit_btn", width="stretch"):
                 st.session_state.inv_edit_mode = True
                 st.session_state.inv_edit_data = filtered.copy()
                 st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
-        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        st.dataframe(filtered, width="stretch", hide_index=True)
     else:
         with btn_col:
             st.markdown("<div style='padding-top: 28px'>", unsafe_allow_html=True)
-            if st.button("✅ Done", key="inv_done_btn", use_container_width=True):
+            if st.button("✅ Done", key="inv_done_btn", width="stretch"):
                 st.session_state.inv_edit_mode = False
                 if "game_editor" in st.session_state:
                     del st.session_state["game_editor"]
@@ -221,7 +221,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             st.session_state.inv_edit_data,
             num_rows="dynamic",
             key="game_editor",
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Game Name":      st.column_config.TextColumn("Game", width="medium", required=True),
                 "Date Purchased": st.column_config.TextColumn("Date Purchased"),
@@ -383,7 +383,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                     .properties(height=420)
                     .interactive()
                 )
-                st.altair_chart(_trends_line, use_container_width=True)
+                st.altair_chart(_trends_line, width="stretch")
 
     # ── Peak Player Counts ─────────────────────────────────────────────────────
     with st.expander("📊 Peak Player Counts (SteamSpy)", expanded=False):
@@ -411,7 +411,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             )
         with trends_col:
             if st.button("📊 Refresh Trends", key="fetch_inv_trends",
-                         help="Fetch Google Trends scores for filtered games", use_container_width=True):
+                         help="Fetch Google Trends scores for filtered games", width="stretch"):
                 games = filtered["Game Name"].dropna().unique().tolist()
                 _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
                 games_to_fetch = filter_stale_trends_games(games, _cached_ts)
@@ -579,7 +579,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                         )
                         st.altair_chart(
                             (bars + labels).properties(height=max(200, len(plot_df) * 32)),
-                            use_container_width=True,
+                            width="stretch",
                         )
                         st.caption(
                             "🟢 **Rising ▲** — at or above all-time peak &nbsp;|&nbsp; "

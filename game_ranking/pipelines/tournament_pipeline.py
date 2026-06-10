@@ -1,0 +1,291 @@
+"""
+Tournament pipeline — orchestration layer.
+
+Handles API calls and drives state transitions via tournament_state.py.
+
+Flow:
+  start_tournament()  → reset state → submit_round() for both brackets
+  collect_results()   → poll tasks_ready → fetch results → advance/submit next rounds
+                        → when both brackets have finalists → assemble anchor pool
+
+Pingback URL is set on every task. Result collection uses polling
+(Streamlit cannot receive inbound POST requests).
+"""
+
+import logging
+from datetime import date, timedelta
+
+from calculation.dataforseo_trends import (
+    post_tasks_bulk,
+    fetch_tasks_ready,
+    fetch_task_result,
+    GAMES_CATEGORY,
+)
+from calculation.trends_tournament import strip_edition_suffix, TOURNAMENT_GROUP_SIZE
+from pipelines.tournament_state import (
+    load_state,
+    save_state,
+    reset_state,
+    is_round_complete,
+    get_pending_task_ids,
+    update_task_result,
+    advance_bracket,
+    extract_finalists_from_final_round,
+    assemble_anchor_pool,
+    PINGBACK_URL,
+    BRACKETS,
+)
+
+log = logging.getLogger(__name__)
+
+_GROUP_SIZE = TOURNAMENT_GROUP_SIZE  # 5
+
+
+def _date_range() -> tuple[str, str]:
+    today = date.today()
+    return (today - timedelta(days=30)).isoformat(), today.isoformat()
+
+
+# ── Round submission ──────────────────────────────────────────────────────────
+
+def submit_round(state: dict, bracket: str, login: str, password: str) -> dict:
+    """
+    Submit the current round for one bracket.
+
+    Splits state[bracket]["pool"] into groups of 5:
+      - Group of 1 → bye (auto-advance, no API call)
+      - Group of 2–5 → one DataForSEO task
+
+    All non-bye tasks are batch-POSTed in one call (up to 100 per POST).
+    Task IDs are written back into state. State is saved before returning.
+    """
+    pool = state[bracket]["pool"]
+    if not pool:
+        return state
+
+    rnum = state[bracket]["current_round"]
+    rnum_str = str(rnum)
+
+    # Ensure round dict exists
+    if rnum_str not in state[bracket]["rounds"]:
+        state[bracket]["rounds"][rnum_str] = {
+            "is_final": len(pool) <= _GROUP_SIZE,
+            "tasks":     [],
+            "bye_games": [],
+        }
+
+    rdata = state[bracket]["rounds"][rnum_str]
+    date_from, date_to = _date_range()
+    pingback_url = state.get("pingback_url", PINGBACK_URL)
+
+    # Build task dicts for non-bye groups; handle byes immediately
+    task_dicts:  list[dict] = []
+    task_metas:  list[dict] = []  # parallel list: original + cleaned keywords
+
+    groups = [pool[i:i + _GROUP_SIZE] for i in range(0, len(pool), _GROUP_SIZE)]
+
+    for group in groups:
+        if len(group) == 1:
+            # True bye — auto-advance, no task
+            bye_game = group[0]
+            rdata["bye_games"].append(bye_game)
+            if bye_game not in state[bracket]["all_bye_games"]:
+                state[bracket]["all_bye_games"].append(bye_game)
+            log.info("[%s] Round %d: bye → %s", bracket, rnum, bye_game)
+            continue
+
+        cleaned = [strip_edition_suffix(g) for g in group]
+        task_dicts.append({
+            "keywords":      cleaned,
+            "category_code": GAMES_CATEGORY,
+            "date_from":     date_from,
+            "date_to":       date_to,
+            "type":          "web",
+            "item_types":    ["google_trends_graph"],
+            "pingback_url":  pingback_url,
+        })
+        task_metas.append({"keywords": group, "cleaned_keywords": cleaned})
+
+    # Batch-POST in chunks of 100
+    task_ids: list[str | None] = []
+    for chunk_start in range(0, len(task_dicts), 100):
+        chunk = task_dicts[chunk_start:chunk_start + 100]
+        ids = post_tasks_bulk(chunk, login, password)
+        # Pad with None if post returned fewer IDs than tasks
+        while len(ids) < len(chunk):
+            ids.append(None)
+        task_ids.extend(ids)
+
+    # Write task records into state
+    for meta, task_id in zip(task_metas, task_ids):
+        rdata["tasks"].append({
+            "task_id":         task_id,
+            "keywords":        meta["keywords"],
+            "cleaned_keywords": meta["cleaned_keywords"],
+            "scores":          {},
+            "winner":          None,
+            "status":          "pending" if task_id else "failed",
+        })
+        if task_id:
+            log.info("[%s] Round %d: submitted task %s for %s", bracket, rnum, task_id, meta["keywords"])
+        else:
+            log.warning("[%s] Round %d: task submission failed for %s", bracket, rnum, meta["keywords"])
+
+    # If ALL groups were byes (very unlikely but possible), the round is already done
+    save_state(state)
+    return state
+
+
+# ── Result collection ─────────────────────────────────────────────────────────
+
+def collect_results(login: str, password: str) -> dict:
+    """
+    Poll DataForSEO tasks_ready, fetch completed tasks, update state.
+    Advances complete rounds and submits the next round automatically.
+    Assembles the anchor pool when both brackets have finalists.
+
+    Returns:
+      {
+        "checked":        int,   # tasks from tasks_ready that were ours
+        "collected":      int,   # tasks successfully parsed
+        "rounds_advanced": int,  # rounds that completed and advanced
+        "errors":         int,   # tasks with all-zero scores
+        "complete":       bool,  # True if tournament is fully done
+      }
+    """
+    state = load_state()
+    if state["status"] not in ("running",):
+        return {"checked": 0, "collected": 0, "rounds_advanced": 0, "errors": 0, "complete": state["status"] == "complete"}
+
+    pending_map = get_pending_task_ids(state)
+    if not pending_map:
+        # No pending tasks — check if both brackets are actually done
+        _check_completion(state, login, password)
+        save_state(state)
+        return {"checked": 0, "collected": 0, "rounds_advanced": 0, "errors": 0, "complete": state["status"] == "complete"}
+
+    ready_ids = fetch_tasks_ready(login, password)
+    our_ready = set(pending_map.keys()) & ready_ids
+
+    checked = len(our_ready)
+    collected = 0
+    errors = 0
+
+    for task_id in list(our_ready):
+        bracket, rnum, task_idx = pending_map[task_id]
+        rdata = state[bracket]["rounds"][str(rnum)]
+        task = rdata["tasks"][task_idx]
+        cleaned_kws = task["cleaned_keywords"]
+        orig_kws    = task["keywords"]
+
+        scores_raw = fetch_task_result(task_id, cleaned_kws, login, password)
+
+        # Map cleaned → original names
+        scores_orig = {orig: scores_raw.get(clean, 0.0) for orig, clean in zip(orig_kws, cleaned_kws)}
+        winner = max(scores_orig, key=scores_orig.get) if any(v > 0 for v in scores_orig.values()) else None
+
+        update_task_result(state, bracket, rnum, task_idx, scores_orig, winner)
+
+        if any(v > 0 for v in scores_orig.values()):
+            collected += 1
+            log.info("[%s] Task %s collected — winner: %s", bracket, task_id, winner)
+        else:
+            errors += 1
+            log.warning("[%s] Task %s all-zero scores", bracket, task_id)
+
+    rounds_advanced = _check_completion(state, login, password)
+    save_state(state)
+
+    return {
+        "checked":        checked,
+        "collected":      collected,
+        "rounds_advanced": rounds_advanced,
+        "errors":         errors,
+        "complete":       state["status"] == "complete",
+    }
+
+
+def _check_completion(state: dict, login: str, password: str) -> int:
+    """
+    For each bracket: if its current round is complete, advance it.
+    If both brackets have finalists, assemble anchor pool and mark complete.
+    Returns the number of rounds that were advanced.
+    Mutates state in place (caller must save).
+    """
+    rounds_advanced = 0
+
+    for bracket in BRACKETS:
+        if state[bracket].get("finalists"):
+            continue  # already done
+
+        rnum_str = str(state[bracket]["current_round"])
+        rdata = state[bracket]["rounds"].get(rnum_str, {})
+
+        if not is_round_complete(state, bracket):
+            continue
+
+        # Round complete — extract finalists or advance
+        if rdata.get("is_final"):
+            finalists = extract_finalists_from_final_round(state, bracket)
+            state[bracket]["finalists"] = finalists
+            log.info("[%s] Final round complete — finalists: %s", bracket, finalists)
+        else:
+            advance_bracket(state, bracket)
+            rounds_advanced += 1
+            # Submit next round if bracket not yet done
+            if not state[bracket].get("finalists"):
+                submit_round(state, bracket, login, password)
+                # Note: submit_round calls save_state internally; that's OK — it's idempotent
+                rounds_advanced += 1  # count the submission as another advance
+
+    # Check if tournament is done
+    both_done = all(bool(state[b].get("finalists")) or not state[b]["pool"] for b in BRACKETS)
+    if both_done and state["status"] == "running":
+        assemble_anchor_pool(state)
+        state["status"] = "complete"
+        log.info("Tournament complete — anchor pool: %s", state["anchor_pool"])
+
+    return rounds_advanced
+
+
+# ── Tournament entry point ────────────────────────────────────────────────────
+
+def start_tournament(
+    steam_games: list[str],
+    nonsteam_games: list[str],
+    login: str,
+    password: str,
+    pingback_url: str = PINGBACK_URL,
+) -> dict:
+    """
+    Reset tournament state and submit round 1 for both brackets.
+    Returns the updated state dict.
+    """
+    state = reset_state(steam_games, nonsteam_games, pingback_url)
+
+    for bracket, games in (("steam", steam_games), ("non_steam", nonsteam_games)):
+        if not games:
+            continue
+        if len(games) == 1:
+            # Sole game — instant finalist, no task needed
+            state[bracket]["finalists"] = games[:]
+            log.info("[%s] Single game — instant finalist: %s", bracket, games[0])
+        else:
+            # Mark round 1
+            state[bracket]["rounds"]["1"] = {
+                "is_final": len(games) <= _GROUP_SIZE,
+                "tasks":     [],
+                "bye_games": [],
+            }
+            submit_round(state, bracket, login, password)
+
+    # Handle case where both brackets finished immediately (e.g., 1 game each)
+    both_done = all(bool(state[b].get("finalists")) or not state[b]["pool"] for b in BRACKETS)
+    if both_done:
+        assemble_anchor_pool(state)
+        state["status"] = "complete"
+    else:
+        state["status"] = "running"
+
+    save_state(state)
+    return state

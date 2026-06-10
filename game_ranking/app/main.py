@@ -226,9 +226,12 @@ if _trends_thread_state["result"] is not None:
         st.session_state["trends_pipeline_error"] = _res["error"]
     else:
         st.session_state.pop("trends_pipeline_error", None)
-        st.session_state.nonsteam_trends = _res["scores"]
+        st.session_state.nonsteam_trends = _res.get("scores", {})
         st.session_state.trends_anchor = _res["anchor"]
         st.session_state.tournament_results_auto = _res["tournament_results"]
+        st.session_state.tournament_auto_steam       = _res.get("steam_tournament_results", [])
+        st.session_state.tournament_auto_nonsteam    = _res.get("nonsteam_tournament_results", [])
+        st.session_state.tournament_auto_cross_final = _res.get("cross_final_result")
 
 if _trends_thread_state["running"]:
     st.sidebar.info(f"🔄 {_trends_thread_state.get('progress', 'Trends updating...')}")
