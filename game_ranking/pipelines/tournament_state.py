@@ -40,7 +40,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from config import TOURNAMENT_STATE_FILE
+from config import TOURNAMENT_STATE_FILE, MANUAL_TOURNAMENT_STATE_FILE
 
 PINGBACK_URL = "https://gameranking-research-ags.streamlit.app/"
 BRACKETS = ("steam", "non_steam")
@@ -219,6 +219,68 @@ def extract_finalists_from_final_round(state: dict, bracket: str) -> list[str]:
 
     ranked = sorted(all_scores, key=all_scores.get, reverse=True)
     return ranked[:2]
+
+
+# ── Anchor pool assembly ──────────────────────────────────────────────────────
+
+# ── Manual tournament state ───────────────────────────────────────────────────
+
+def _empty_grand_final() -> dict:
+    return {
+        "steam_champion":    None,
+        "nonsteam_champion": None,
+        "task_id":           None,
+        "keywords":          [],
+        "cleaned_keywords":  [],
+        "scores":            {},
+        "winner":            None,
+        "status":            "idle",
+    }
+
+
+def _empty_manual_state() -> dict:
+    return {
+        "pingback_url": PINGBACK_URL,
+        "steam":        _empty_bracket(),
+        "non_steam":    _empty_bracket(),
+        "grand_final":  _empty_grand_final(),
+    }
+
+
+def load_manual_state() -> dict:
+    """Return manual tournament state from file, or a fresh empty state."""
+    if MANUAL_TOURNAMENT_STATE_FILE.exists():
+        try:
+            return json.loads(MANUAL_TOURNAMENT_STATE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return _empty_manual_state()
+
+
+def save_manual_state(state: dict) -> None:
+    """Atomically write manual state to file."""
+    MANUAL_TOURNAMENT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = MANUAL_TOURNAMENT_STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(MANUAL_TOURNAMENT_STATE_FILE)
+
+
+def reset_manual_bracket(state: dict, bracket: str, games: list[str]) -> None:
+    """Reset a single bracket in the manual state dict (mutates in place)."""
+    state[bracket] = _empty_bracket()
+    state[bracket]["pool"] = list(games)
+    state["grand_final"] = _empty_grand_final()
+
+
+def get_manual_pending_task_ids(state: dict, bracket: str) -> dict[str, tuple[str, int, int]]:
+    """Return {task_id: (bracket, round_num_int, task_idx)} for pending tasks in one bracket."""
+    pending: dict[str, tuple[str, int, int]] = {}
+    for rnum_str, rdata in state[bracket]["rounds"].items():
+        rnum = int(rnum_str)
+        for idx, task in enumerate(rdata.get("tasks", [])):
+            if task["status"] == "pending" and task.get("task_id"):
+                pending[task["task_id"]] = (bracket, rnum, idx)
+    return pending
 
 
 # ── Anchor pool assembly ──────────────────────────────────────────────────────

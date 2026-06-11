@@ -7,16 +7,17 @@ All searches scoped to category 41 (Computer & Video Games), worldwide, past mon
 """
 
 import datetime as dt
-import math
 import pandas as pd
 import streamlit as st
 
-from calculation.trends_tournament import (
-    run_tournament, run_cross_final, TOURNAMENT_GROUP_SIZE,
-)
+from calculation.trends_tournament import TOURNAMENT_GROUP_SIZE
 from calculation.dataforseo_trends import load_credentials, save_credentials
-from pipelines.tournament_state import load_state, save_state, PINGBACK_URL
-from pipelines.tournament_pipeline import start_tournament, collect_results
+from pipelines.tournament_state import load_state, save_state, load_manual_state, save_manual_state, PINGBACK_URL
+from pipelines.tournament_pipeline import (
+    start_tournament, collect_results,
+    start_manual_bracket, collect_manual_bracket,
+    submit_grand_final, collect_grand_final,
+)
 from pipelines.trends_pipeline import load_tournament_anchor, save_tournament_anchor
 
 
@@ -58,43 +59,32 @@ def _get_nonsteam_games(n: int | None = None, appended_since=None) -> list[str]:
     return series.tolist() if n is None else series.head(n).tolist()
 
 
-def _results_to_df(results: list[dict]) -> pd.DataFrame:
-    if not results:
-        return pd.DataFrame()
-    df = pd.DataFrame(results)
-    df = df[~df["score"].isna()].copy()
-    df["score"] = df["score"].round(2)
-    df["Result"] = df.apply(
-        lambda r: (
-            "🏆 Champion" if r["champion"]
-            else "⚠️ API Error" if r.get("api_failed")
-            else "✅ Advanced" if not r["eliminated"]
-            else "❌ Eliminated"
-        ),
-        axis=1,
-    )
-    return df[["round", "group", "game", "score", "Result"]].rename(columns={
-        "round": "Round", "group": "Group", "game": "Game", "score": "Score",
-    })
+def _manual_bracket_status(bracket_data: dict) -> str:
+    if bracket_data.get("finalists"):
+        return "complete"
+    if bracket_data.get("rounds"):
+        return "running"
+    return "idle"
 
 
-def _estimate_total_groups(n: int, group_size: int = TOURNAMENT_GROUP_SIZE) -> int:
-    total, pool = 0, n
-    while pool > 1:
-        g = math.ceil(pool / group_size)
-        total += g
-        pool = g
-    return max(total, 1)
-
-
-def _champion_from_results(results: list[dict]) -> str | None:
-    for r in results:
-        if r.get("champion"):
-            return r["game"]
-    for r in reversed(results):
-        if not r["eliminated"]:
-            return r["game"]
-    return None
+def _render_bracket_rounds(bracket_data: dict) -> None:
+    """Render all rounds for a bracket as dataframes (mirrors auto-tournament display)."""
+    for rn in sorted(bracket_data.get("rounds", {}).keys(), key=int):
+        rd = bracket_data["rounds"][rn]
+        fin_tag = " (final)" if rd.get("is_final") else ""
+        st.caption(f"**Round {rn}{fin_tag}** — byes: {rd.get('bye_games', [])}")
+        rows = []
+        for ti, t in enumerate(rd.get("tasks", [])):
+            scores = t.get("scores", {})
+            rows.append({
+                "Group":    ti + 1,
+                "Keywords": ", ".join(t.get("keywords", [])),
+                "Scores":   ", ".join(f"{k}: {v:.1f}" for k, v in scores.items()) if scores else "pending",
+                "Winner":   t.get("winner") or "—",
+                "Status":   t.get("status", "pending"),
+            })
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 def _get_creds() -> tuple[str, str]:
@@ -330,34 +320,7 @@ def render():
                     if _rows:
                         st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
 
-        # Anchor pool selection
-        st.divider()
-        st.subheader("🎯 Anchor Pool")
-        _anchor_pool = _t_state.get("anchor_pool", [])
-        if _anchor_pool:
-            st.caption(
-                "Top 2 Steam + Top 2 Non-Steam finalists + any bye-advanced games. "
-                "Select one (or more) to use as the anchor for trend scoring."
-            )
-            _prev_selected = _t_state.get("selected_anchors", [])
-            _selected = st.multiselect(
-                "Select anchor(s)", options=_anchor_pool,
-                default=[g for g in _prev_selected if g in _anchor_pool],
-                key="anchor_pool_selection",
-            )
-            if st.button("💾 Set as Anchor", key="set_anchor_btn"):
-                if _selected:
-                    _t_state["selected_anchors"] = _selected
-                    save_state(_t_state)
-                    # Use first selected game as the primary anchor
-                    save_tournament_anchor(_selected[0])
-                    st.session_state["trends_anchor"] = _selected[0]
-                    st.success(f"Anchor set to: **{_selected[0]}**")
-                    st.rerun()
-                else:
-                    st.warning("Select at least one game.")
-        else:
-            st.info("Anchor pool is empty — no finalists found.")
+        st.info("Anchor pool is available — select your anchor in the Steam or Non-Steam tab.")
 
         if st.button("🗑 Reset Tournament", key="reset_complete_btn"):
             save_state({"pingback_url": PINGBACK_URL, "status": "idle",
@@ -370,137 +333,143 @@ def render():
 
     st.divider()
 
-    # ── Steam bracket (manual) ────────────────────────────────────────────────
-    st.subheader("🚀 Steam Bracket")
-    steam_games = _get_steam_games(top_n, appended_since=appended_since)
+    # ── Manual brackets ───────────────────────────────────────────────────────
+    _m_state = load_manual_state()
 
-    if not steam_games:
-        st.warning("No Steam games loaded.")
-    else:
-        st.caption(f"{len(steam_games)} games entered")
-        with st.expander("Games entering tournament", expanded=False):
-            st.write(", ".join(steam_games))
+    def _render_manual_bracket(bracket_key: str, label: str, games: list[str]) -> None:
+        st.subheader(label)
+        _b = _m_state[bracket_key]
+        _bstatus = _manual_bracket_status(_b)
 
-        if st.button("▶ Run Steam Tournament", key="run_steam_tournament", width="stretch"):
-            st.session_state.pop("tournament_steam_results", None)
-            st.session_state.pop("tournament_steam_champion", None)
+        if _bstatus == "idle":
+            if not games:
+                st.warning(f"No {label.split()[1]} games loaded.")
+                return
+            st.caption(f"{len(games)} games entered")
+            with st.expander("Games entering tournament", expanded=False):
+                st.write(", ".join(games))
+            if st.button(f"▶ Start {label.split()[1]} Tournament", key=f"start_manual_{bracket_key}"):
+                with st.spinner("Submitting round 1 tasks…"):
+                    start_manual_bracket(bracket_key, games, login, password)
+                st.rerun()
 
-            progress_text = st.empty()
-            bar = st.progress(0)
-            total_groups = _estimate_total_groups(len(steam_games))
-            groups_done = [0]
-
-            def _steam_progress(msg: str):
-                groups_done[0] += 1
-                bar.progress(min(groups_done[0] / total_groups, 0.99))
-                progress_text.caption(msg)
-
-            results = run_tournament(
-                steam_games, login=login, password=password,
-                progress_callback=_steam_progress,
-                label="Steam",
+        elif _bstatus == "running":
+            rnum  = _b.get("current_round", 1)
+            rdata = _b.get("rounds", {}).get(str(rnum), {})
+            tasks = rdata.get("tasks", [])
+            done  = sum(1 for t in tasks if t["status"] in ("complete", "failed"))
+            total = len(tasks)
+            byes  = len(rdata.get("bye_games", []))
+            fin_tag = " (final round)" if rdata.get("is_final") else ""
+            st.info(
+                f"Round {rnum}{fin_tag} — {done}/{total} tasks complete"
+                + (f", {byes} bye(s)" if byes else "")
             )
+            _c1, _c2 = st.columns(2)
+            with _c1:
+                if st.button("🔄 Collect Results", key=f"collect_manual_{bracket_key}"):
+                    with st.spinner("Polling DataForSEO tasks_ready…"):
+                        _sum = collect_manual_bracket(bracket_key, login, password)
+                    st.success(
+                        f"Checked {_sum['checked']} ready — "
+                        f"collected {_sum['collected']}, "
+                        f"{_sum['rounds_advanced']} round(s) advanced, "
+                        f"{_sum['errors']} error(s)."
+                    )
+                    st.rerun()
+            with _c2:
+                if st.button("🗑 Reset", key=f"reset_manual_{bracket_key}"):
+                    _m_state[bracket_key] = {"rounds": {}, "current_round": 1,
+                                             "pool": [], "finalists": [], "all_bye_games": []}
+                    _m_state["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
+                                               "task_id": None, "keywords": [], "cleaned_keywords": [],
+                                               "scores": {}, "winner": None, "status": "idle"}
+                    save_manual_state(_m_state)
+                    st.rerun()
+            with st.expander("Bracket rounds", expanded=False):
+                _render_bracket_rounds(_b)
 
-            bar.progress(1.0)
-            progress_text.empty()
+        elif _bstatus == "complete":
+            finalists = _b.get("finalists", [])
+            champion  = finalists[0] if finalists else None
+            if champion:
+                st.success(f"🏆 Champion: **{champion}**")
+            with st.expander("Bracket rounds", expanded=False):
+                _render_bracket_rounds(_b)
+            if st.button("🗑 Reset", key=f"reset_manual_{bracket_key}_done"):
+                _m_state[bracket_key] = {"rounds": {}, "current_round": 1,
+                                         "pool": [], "finalists": [], "all_bye_games": []}
+                _m_state["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
+                                           "task_id": None, "keywords": [], "cleaned_keywords": [],
+                                           "scores": {}, "winner": None, "status": "idle"}
+                save_manual_state(_m_state)
+                st.rerun()
 
-            st.session_state.tournament_steam_results  = results
-            st.session_state.tournament_steam_champion = _champion_from_results(results)
-            st.rerun()
-
-    if "tournament_steam_results" in st.session_state:
-        champ = st.session_state.get("tournament_steam_champion")
-        if champ:
-            st.success(f"🏆 Steam Champion: **{champ}**")
-        df_res = _results_to_df(st.session_state.tournament_steam_results)
-        if not df_res.empty:
-            st.dataframe(df_res, width="stretch", hide_index=True,
-                         column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
-            _failed = df_res[df_res["Result"] == "⚠️ API Error"]
-            if not _failed.empty:
-                st.warning(f"{len(_failed)} game(s) in groups where the API returned all zeros — scores may be unreliable.")
-
-    st.divider()
-
-    # ── Non-Steam bracket ─────────────────────────────────────────────────────
-    st.subheader("📽️ Non-Steam Bracket")
+    steam_games    = _get_steam_games(top_n, appended_since=appended_since)
     nonsteam_games = _get_nonsteam_games(top_n, appended_since=appended_since)
 
-    if not nonsteam_games:
-        st.warning("No Non-Steam games loaded.")
-    else:
-        st.caption(f"{len(nonsteam_games)} games entered")
-        with st.expander("Games entering tournament", expanded=False):
-            st.write(", ".join(nonsteam_games))
-
-        if st.button("▶ Run Non-Steam Tournament", key="run_nonsteam_tournament", width="stretch"):
-            st.session_state.pop("tournament_nonsteam_results", None)
-            st.session_state.pop("tournament_nonsteam_champion", None)
-
-            progress_text = st.empty()
-            bar = st.progress(0)
-            total_groups = _estimate_total_groups(len(nonsteam_games))
-            groups_done = [0]
-
-            def _nonsteam_progress(msg: str):
-                groups_done[0] += 1
-                bar.progress(min(groups_done[0] / total_groups, 0.99))
-                progress_text.caption(msg)
-
-            results = run_tournament(
-                nonsteam_games, login=login, password=password,
-                progress_callback=_nonsteam_progress,
-                label="Non-Steam",
-            )
-
-            bar.progress(1.0)
-            progress_text.empty()
-
-            st.session_state.tournament_nonsteam_results  = results
-            st.session_state.tournament_nonsteam_champion = _champion_from_results(results)
-            st.rerun()
-
-    if "tournament_nonsteam_results" in st.session_state:
-        champ = st.session_state.get("tournament_nonsteam_champion")
-        if champ:
-            st.success(f"🏆 Non-Steam Champion: **{champ}**")
-        df_res = _results_to_df(st.session_state.tournament_nonsteam_results)
-        if not df_res.empty:
-            st.dataframe(df_res, width="stretch", hide_index=True,
-                         column_config={"Score": st.column_config.NumberColumn(format="%.2f")})
-            _failed = df_res[df_res["Result"] == "⚠️ API Error"]
-            if not _failed.empty:
-                st.warning(f"{len(_failed)} game(s) in groups where the API returned all zeros — scores may be unreliable.")
-
+    _render_manual_bracket("steam",     "🚀 Steam Bracket",     steam_games)
+    st.divider()
+    _render_manual_bracket("non_steam", "📽️ Non-Steam Bracket", nonsteam_games)
     st.divider()
 
-    # ── Cross-final ───────────────────────────────────────────────────────────
+    # ── Grand Final ───────────────────────────────────────────────────────────
     st.subheader("⚡ Grand Final")
 
-    steam_champ = st.session_state.get("tournament_steam_champion")
-    ns_champ    = st.session_state.get("tournament_nonsteam_champion")
+    _m_state2    = load_manual_state()   # reload after bracket renders may have saved
+    _gf          = _m_state2.get("grand_final", {})
+    _gf_status   = _gf.get("status", "idle")
+    _s_champ     = (_m_state2["steam"].get("finalists") or [None])[0]
+    _ns_champ    = (_m_state2["non_steam"].get("finalists") or [None])[0]
 
-    if not steam_champ or not ns_champ:
-        st.info("Run both the Steam and Non-Steam tournaments first to unlock the Grand Final.")
+    if not _s_champ or not _ns_champ:
+        st.info("Complete both the Steam and Non-Steam brackets first to unlock the Grand Final.")
     else:
-        st.caption(f"**Steam champion:** {steam_champ} vs **Non-Steam champion:** {ns_champ}")
+        st.caption(f"**Steam champion:** {_s_champ} vs **Non-Steam champion:** {_ns_champ}")
 
-        if st.button("▶ Run Grand Final", key="run_grand_final", width="stretch"):
-            st.session_state.pop("tournament_final_result", None)
-            with st.spinner(f"Comparing {steam_champ} vs {ns_champ}…"):
-                result = run_cross_final(steam_champ, ns_champ, login=login, password=password)  # direct comparison, no anchor
-            st.session_state.tournament_final_result = result
-            st.rerun()
+        if _gf_status == "idle":
+            if st.button("▶ Submit Grand Final", key="submit_grand_final", width="stretch"):
+                with st.spinner("Submitting Grand Final task…"):
+                    submit_grand_final(_s_champ, _ns_champ, login, password)
+                st.rerun()
 
-    if "tournament_final_result" in st.session_state:
-        res    = st.session_state.tournament_final_result
-        winner = res["winner"]
-        st.balloons()
-        st.success(f"🥇 Overall Winner: **{winner}**")
-        f1, f2 = st.columns(2)
-        with f1:
-            label = "🚀 Steam" + (" 🥇" if res["steam_champion"] == winner else "")
-            st.metric(label, res["steam_champion"], f"{res['steam_score']:.1f} pts")
-        with f2:
-            label = "📽️ Non-Steam" + (" 🥇" if res["nonsteam_champion"] == winner else "")
-            st.metric(label, res["nonsteam_champion"], f"{res['nonsteam_score']:.1f} pts")
+        elif _gf_status == "pending":
+            st.info("Grand Final task submitted — click Collect to fetch the result.")
+            _gc1, _gc2 = st.columns(2)
+            with _gc1:
+                if st.button("🔄 Collect Grand Final", key="collect_grand_final"):
+                    with st.spinner("Polling DataForSEO tasks_ready…"):
+                        _gf_res = collect_grand_final(login, password)
+                    if _gf_res["complete"]:
+                        st.rerun()
+                    else:
+                        st.info("Result not ready yet — try again in a moment.")
+            with _gc2:
+                if st.button("🗑 Reset Grand Final", key="reset_gf_pending"):
+                    _m_state2["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
+                                                "task_id": None, "keywords": [], "cleaned_keywords": [],
+                                                "scores": {}, "winner": None, "status": "idle"}
+                    save_manual_state(_m_state2)
+                    st.rerun()
+
+        elif _gf_status in ("complete", "failed"):
+            _winner = _gf.get("winner")
+            if _winner:
+                st.balloons()
+                st.success(f"🥇 Overall Winner: **{_winner}**")
+                _scores = _gf.get("scores", {})
+                _f1, _f2 = st.columns(2)
+                with _f1:
+                    _slabel = "🚀 Steam" + (" 🥇" if _s_champ == _winner else "")
+                    st.metric(_slabel, _s_champ, f"{_scores.get(_s_champ, 0.0):.1f} pts")
+                with _f2:
+                    _nslabel = "📽️ Non-Steam" + (" 🥇" if _ns_champ == _winner else "")
+                    st.metric(_nslabel, _ns_champ, f"{_scores.get(_ns_champ, 0.0):.1f} pts")
+            else:
+                st.warning("Grand Final task failed — no scores returned.")
+            if st.button("🗑 Reset Grand Final", key="reset_gf_done"):
+                _m_state2["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
+                                            "task_id": None, "keywords": [], "cleaned_keywords": [],
+                                            "scores": {}, "winner": None, "status": "idle"}
+                save_manual_state(_m_state2)
+                st.rerun()

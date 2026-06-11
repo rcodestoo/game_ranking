@@ -32,6 +32,10 @@ from pipelines.tournament_state import (
     advance_bracket,
     extract_finalists_from_final_round,
     assemble_anchor_pool,
+    load_manual_state,
+    save_manual_state,
+    reset_manual_bracket,
+    get_manual_pending_task_ids,
     PINGBACK_URL,
     BRACKETS,
 )
@@ -48,7 +52,7 @@ def _date_range() -> tuple[str, str]:
 
 # ── Round submission ──────────────────────────────────────────────────────────
 
-def submit_round(state: dict, bracket: str, login: str, password: str) -> dict:
+def submit_round(state: dict, bracket: str, login: str, password: str, save_fn=None) -> dict:
     """
     Submit the current round for one bracket.
 
@@ -132,7 +136,7 @@ def submit_round(state: dict, bracket: str, login: str, password: str) -> dict:
             log.warning("[%s] Round %d: task submission failed for %s", bracket, rnum, meta["keywords"])
 
     # If ALL groups were byes (very unlikely but possible), the round is already done
-    save_state(state)
+    (save_fn or save_state)(state)
     return state
 
 
@@ -246,6 +250,172 @@ def _check_completion(state: dict, login: str, password: str) -> int:
         log.info("Tournament complete — anchor pool: %s", state["anchor_pool"])
 
     return rounds_advanced
+
+
+# ── Manual bracket pipeline ───────────────────────────────────────────────────
+
+def start_manual_bracket(bracket: str, games: list[str], login: str, password: str) -> dict:
+    """
+    Reset one bracket in manual_tournament_state.json and submit round 1.
+    Also resets the grand final (champion may change).
+    Returns the updated manual state dict.
+    """
+    state = load_manual_state()
+    reset_manual_bracket(state, bracket, games)  # also resets grand_final
+    save_manual_state(state)
+
+    if not games:
+        return state
+    if len(games) == 1:
+        state[bracket]["finalists"] = games[:]
+        save_manual_state(state)
+        return state
+
+    state[bracket]["rounds"]["1"] = {
+        "is_final": len(games) <= _GROUP_SIZE,
+        "tasks":     [],
+        "bye_games": [],
+    }
+    submit_round(state, bracket, login, password, save_fn=save_manual_state)
+    return state
+
+
+def collect_manual_bracket(bracket: str, login: str, password: str) -> dict:
+    """
+    Poll tasks_ready for one manual bracket, fetch completed tasks, advance rounds.
+    Returns a summary dict identical in shape to collect_results().
+    """
+    state = load_manual_state()
+    pending_map = get_manual_pending_task_ids(state, bracket)
+
+    if not pending_map:
+        rounds_advanced = _advance_manual_if_complete(state, bracket, login, password)
+        save_manual_state(state)
+        return {"checked": 0, "collected": 0, "rounds_advanced": rounds_advanced,
+                "errors": 0, "complete": bool(state[bracket].get("finalists"))}
+
+    ready_ids = fetch_tasks_ready(login, password)
+    our_ready = set(pending_map.keys()) & ready_ids
+
+    checked = len(our_ready)
+    collected = 0
+    errors = 0
+
+    for task_id in list(our_ready):
+        _brk, rnum, task_idx = pending_map[task_id]
+        rdata   = state[bracket]["rounds"][str(rnum)]
+        task    = rdata["tasks"][task_idx]
+        cleaned_kws = task["cleaned_keywords"]
+        orig_kws    = task["keywords"]
+
+        scores_raw  = fetch_task_result(task_id, cleaned_kws, login, password)
+        scores_orig = {orig: scores_raw.get(clean, 0.0)
+                       for orig, clean in zip(orig_kws, cleaned_kws)}
+        winner = max(scores_orig, key=scores_orig.get) if any(v > 0 for v in scores_orig.values()) else None
+
+        update_task_result(state, bracket, rnum, task_idx, scores_orig, winner)
+
+        if any(v > 0 for v in scores_orig.values()):
+            collected += 1
+            log.info("[manual/%s] Task %s collected — winner: %s", bracket, task_id, winner)
+        else:
+            errors += 1
+            log.warning("[manual/%s] Task %s all-zero scores", bracket, task_id)
+
+    rounds_advanced = _advance_manual_if_complete(state, bracket, login, password)
+    save_manual_state(state)
+
+    return {
+        "checked":         checked,
+        "collected":       collected,
+        "rounds_advanced": rounds_advanced,
+        "errors":          errors,
+        "complete":        bool(state[bracket].get("finalists")),
+    }
+
+
+def _advance_manual_if_complete(state: dict, bracket: str, login: str, password: str) -> int:
+    """Advance the bracket if its current round is done. Returns rounds advanced."""
+    if state[bracket].get("finalists"):
+        return 0
+    rnum_str = str(state[bracket]["current_round"])
+    rdata = state[bracket]["rounds"].get(rnum_str, {})
+    if not is_round_complete(state, bracket):
+        return 0
+    if rdata.get("is_final"):
+        finalists = extract_finalists_from_final_round(state, bracket)
+        state[bracket]["finalists"] = finalists
+        log.info("[manual/%s] Final round complete — finalists: %s", bracket, finalists)
+        return 1
+    else:
+        advance_bracket(state, bracket)
+        if not state[bracket].get("finalists"):
+            submit_round(state, bracket, login, password, save_fn=save_manual_state)
+        return 2
+
+
+def submit_grand_final(steam_champ: str, ns_champ: str, login: str, password: str) -> dict:
+    """Submit a 2-game Grand Final task. Returns the updated manual state dict."""
+    state = load_manual_state()
+    keywords = [steam_champ, ns_champ]
+    cleaned  = [strip_edition_suffix(g) for g in keywords]
+    date_from, date_to = _date_range()
+
+    task_ids = post_tasks_bulk([{
+        "keywords":      cleaned,
+        "category_code": GAMES_CATEGORY,
+        "date_from":     date_from,
+        "date_to":       date_to,
+        "type":          "web",
+        "item_types":    ["google_trends_graph"],
+        "pingback_url":  state.get("pingback_url", PINGBACK_URL),
+    }], login, password)
+
+    task_id = task_ids[0] if task_ids else None
+    state["grand_final"] = {
+        "steam_champion":    steam_champ,
+        "nonsteam_champion": ns_champ,
+        "task_id":           task_id,
+        "keywords":          keywords,
+        "cleaned_keywords":  cleaned,
+        "scores":            {},
+        "winner":            None,
+        "status":            "pending" if task_id else "failed",
+    }
+    save_manual_state(state)
+    log.info("[grand_final] Submitted task %s for %s vs %s", task_id, steam_champ, ns_champ)
+    return state
+
+
+def collect_grand_final(login: str, password: str) -> dict:
+    """
+    Poll tasks_ready for the Grand Final task and fetch result if ready.
+    Returns {"complete": bool, "winner": str|None, "scores": dict}.
+    """
+    state = load_manual_state()
+    gf      = state.get("grand_final", {})
+    task_id = gf.get("task_id")
+
+    if not task_id or gf.get("status") != "pending":
+        return {"complete": gf.get("status") == "complete", "winner": gf.get("winner"), "scores": gf.get("scores", {})}
+
+    ready_ids = fetch_tasks_ready(login, password)
+    if task_id not in ready_ids:
+        return {"complete": False, "winner": None, "scores": {}}
+
+    kws_orig  = gf["keywords"]
+    kws_clean = gf["cleaned_keywords"]
+    scores_raw  = fetch_task_result(task_id, kws_clean, login, password)
+    scores_orig = {orig: scores_raw.get(clean, 0.0) for orig, clean in zip(kws_orig, kws_clean)}
+    winner = max(scores_orig, key=scores_orig.get) if any(v > 0 for v in scores_orig.values()) else None
+
+    gf["scores"] = scores_orig
+    gf["winner"] = winner
+    gf["status"] = "complete" if winner else "failed"
+    state["grand_final"] = gf
+    save_manual_state(state)
+    log.info("[grand_final] Complete — winner: %s", winner)
+    return {"complete": gf["status"] == "complete", "winner": winner, "scores": scores_orig}
 
 
 # ── Tournament entry point ────────────────────────────────────────────────────
