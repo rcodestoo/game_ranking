@@ -299,7 +299,51 @@ def render():
 
     # ── Status: RUNNING ───────────────────────────────────────────────────────
     elif _status == "running":
-        # Auto-resume polling on page load — mirrors tab_steam.py / tab_nonsteam.py pattern
+        _s_bracket  = _t_state.get("steam", {})
+        _ns_bracket = _t_state.get("non_steam", {})
+
+        def _bracket_status(bracket_data: dict, label: str) -> None:
+            rnum = bracket_data.get("current_round", 1)
+            rdata = bracket_data.get("rounds", {}).get(str(rnum), {})
+            tasks = rdata.get("tasks", [])
+            done  = sum(1 for t in tasks if t["status"] in ("complete", "failed"))
+            total = len(tasks)
+            byes  = len(rdata.get("bye_games", []))
+            fin_tag = " (final round)" if rdata.get("is_final") else ""
+            if bracket_data.get("finalists"):
+                st.success(f"**{label}**: finalists found — {', '.join(bracket_data['finalists'])}")
+            elif not bracket_data.get("pool"):
+                st.info(f"**{label}**: no games entered")
+            else:
+                st.info(f"**{label}**: Round {rnum}{fin_tag} — {done}/{total} tasks complete"
+                        + (f", {byes} bye(s)" if byes else ""))
+
+        _bracket_status(_s_bracket,  "Steam")
+        _bracket_status(_ns_bracket, "Non-Steam")
+
+        for _b_key, _b_label in (("steam", "🚀 Steam"), ("non_steam", "📽️ Non-Steam")):
+            _b = _t_state.get(_b_key, {})
+            if not _b.get("rounds"):
+                continue
+            with st.expander(f"{_b_label} bracket rounds", expanded=False):
+                for _rn in sorted(_b["rounds"].keys(), key=int):
+                    _rd = _b["rounds"][_rn]
+                    _fin_tag = " (final)" if _rd.get("is_final") else ""
+                    st.caption(f"**Round {_rn}{_fin_tag}** — byes: {_rd.get('bye_games', [])}")
+                    _rows = []
+                    for _ti, _t in enumerate(_rd.get("tasks", [])):
+                        _scores = _t.get("scores", {})
+                        _rows.append({
+                            "Group":    _ti + 1,
+                            "Keywords": ", ".join(_t.get("keywords", [])),
+                            "Scores":   ", ".join(f"{k}: {v:.1f}" for k, v in _scores.items()) if _scores else "pending",
+                            "Winner":   _t.get("winner") or "—",
+                            "Status":   _t.get("status", "pending"),
+                        })
+                    if _rows:
+                        st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+
+        # Auto-resume polling — mirrors tab_steam.py / tab_nonsteam.py pattern
         _run_collect_loop_tournament(login, password)
         return
 
@@ -363,7 +407,20 @@ def render():
                 st.rerun()
 
         elif _bstatus == "running":
-            # Auto-resume polling on page load — mirrors auto-tournament pattern
+            rnum  = _b.get("current_round", 1)
+            rdata = _b.get("rounds", {}).get(str(rnum), {})
+            tasks = rdata.get("tasks", [])
+            done  = sum(1 for t in tasks if t["status"] in ("complete", "failed"))
+            total = len(tasks)
+            byes  = len(rdata.get("bye_games", []))
+            fin_tag = " (final round)" if rdata.get("is_final") else ""
+            st.info(
+                f"Round {rnum}{fin_tag} — {done}/{total} tasks complete"
+                + (f", {byes} bye(s)" if byes else "")
+            )
+            with st.expander("Bracket rounds", expanded=False):
+                _render_bracket_rounds(_b)
+            # Auto-resume polling — mirrors auto-tournament pattern
             _run_collect_loop_manual(bracket_key, login, password)
             return
 
