@@ -309,7 +309,7 @@ def render():
             _b = _t_state.get(_b_key, {})
             if not _b.get("rounds"):
                 continue
-            with st.expander(f"{_b_label} bracket rounds", expanded=False):
+            with st.expander(f"{_b_label} bracket rounds", expanded=True):
                 for _rn in sorted(_b["rounds"].keys(), key=int):
                     _rd = _b["rounds"][_rn]
                     _fin_tag = " (final)" if _rd.get("is_final") else ""
@@ -347,11 +347,9 @@ def render():
                 if st.button("Cancel", key="confirm_reset_no"):
                     st.session_state.pop("_confirm_reset", None)
                     st.rerun()
-            return  # don't start the loop while confirmation dialog is open
-
-        # Auto-resume polling — mirrors tab_steam.py / tab_nonsteam.py pattern
-        _run_collect_loop_tournament(login, password)
-        return
+        else:
+            # Auto-resume polling — only when no confirmation dialog is open
+            _run_collect_loop_tournament(login, password)
 
     # ── Status: COMPLETE ──────────────────────────────────────────────────────
     elif _status == "complete":
@@ -424,7 +422,7 @@ def render():
                 f"Round {rnum}{fin_tag} — {done}/{total} tasks complete"
                 + (f", {byes} bye(s)" if byes else "")
             )
-            with st.expander("Bracket rounds", expanded=False):
+            with st.expander("Bracket rounds", expanded=True):
                 _render_bracket_rounds(_b)
             # Reset must be checked BEFORE the loop so a click during sleep is caught on the next rerun
             if st.button("🗑 Reset", key=f"reset_manual_{bracket_key}"):
@@ -435,9 +433,9 @@ def render():
                                            "scores": {}, "winner": None, "status": "idle"}
                 save_manual_state(_m_state)
                 st.rerun()
-            # Auto-resume polling — mirrors auto-tournament pattern
-            _run_collect_loop_manual(bracket_key, login, password)
-            return
+            else:
+                # Auto-resume polling — only when not just reset
+                _run_collect_loop_manual(bracket_key, login, password)
 
         elif _bstatus == "complete":
             finalists = _b.get("finalists", [])
