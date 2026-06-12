@@ -343,6 +343,28 @@ def render():
                     if _rows:
                         st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
 
+        # Reset must be checked BEFORE the loop so a click during sleep is caught on the next rerun
+        if st.button("🗑 Reset Tournament", key="reset_running_btn"):
+            st.session_state["_confirm_reset"] = True
+        if st.session_state.get("_confirm_reset"):
+            st.warning("This will clear all tournament progress. Are you sure?")
+            _r1, _r2 = st.columns(2)
+            with _r1:
+                if st.button("Yes, reset", key="confirm_reset_yes"):
+                    save_state({"pingback_url": PINGBACK_URL, "status": "idle",
+                                "steam": {"rounds": {}, "current_round": 1, "pool": [],
+                                          "finalists": [], "all_bye_games": []},
+                                "non_steam": {"rounds": {}, "current_round": 1, "pool": [],
+                                              "finalists": [], "all_bye_games": []},
+                                "anchor_pool": [], "selected_anchors": []})
+                    st.session_state.pop("_confirm_reset", None)
+                    st.rerun()
+            with _r2:
+                if st.button("Cancel", key="confirm_reset_no"):
+                    st.session_state.pop("_confirm_reset", None)
+                    st.rerun()
+            return  # don't start the loop while confirmation dialog is open
+
         # Auto-resume polling — mirrors tab_steam.py / tab_nonsteam.py pattern
         _run_collect_loop_tournament(login, password)
         return
@@ -420,6 +442,15 @@ def render():
             )
             with st.expander("Bracket rounds", expanded=False):
                 _render_bracket_rounds(_b)
+            # Reset must be checked BEFORE the loop so a click during sleep is caught on the next rerun
+            if st.button("🗑 Reset", key=f"reset_manual_{bracket_key}"):
+                _m_state[bracket_key] = {"rounds": {}, "current_round": 1,
+                                         "pool": [], "finalists": [], "all_bye_games": []}
+                _m_state["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
+                                           "task_id": None, "keywords": [], "cleaned_keywords": [],
+                                           "scores": {}, "winner": None, "status": "idle"}
+                save_manual_state(_m_state)
+                st.rerun()
             # Auto-resume polling — mirrors auto-tournament pattern
             _run_collect_loop_manual(bracket_key, login, password)
             return
