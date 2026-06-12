@@ -33,4 +33,12 @@ for _key in list(sys.modules.keys()):
     if _key.split('.')[0] in _LOCAL_PREFIXES:
         del sys.modules[_key]
 
+# Pre-seed the 'app' package into sys.modules so Python 3.13's import machinery
+# can resolve 'from app.helpers import ...' without a KeyError during hot-reload.
+import importlib.util as _ilu
+_app_spec = _ilu.spec_from_file_location("app", os.path.join(_here, "app", "__init__.py"))
+_app_mod  = _ilu.module_from_spec(_app_spec)
+sys.modules["app"] = _app_mod
+_app_spec.loader.exec_module(_app_mod)
+
 runpy.run_path(os.path.join(_here, "app", "main.py"), run_name="__main__")
