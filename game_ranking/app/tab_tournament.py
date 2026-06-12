@@ -7,6 +7,7 @@ All searches scoped to category 41 (Computer & Video Games), worldwide, past mon
 """
 
 import datetime as dt
+import time
 import pandas as pd
 import streamlit as st
 
@@ -108,6 +109,75 @@ def _get_creds() -> tuple[str, str]:
         st.session_state["dfs_login"]    = login
         st.session_state["dfs_password"] = password
     return login, password
+
+
+# ── Auto-poll loops ───────────────────────────────────────────────────────────
+
+def _run_collect_loop_tournament(login: str, password: str) -> None:
+    """Poll collect_results() every 2 min until tournament completes. Mirrors tab_steam.py pattern."""
+    _POLL_SLEEP = 120  # seconds between tasks_ready calls (2 min)
+    _MAX_POLLS  = 200  # safety ceiling
+
+    _bar         = st.progress(0.0, text="Checking DataForSEO for ready tasks…")
+    _status_line = st.empty()
+
+    _poll_num = 0
+    while _poll_num < _MAX_POLLS:
+        _poll_num += 1
+        _summary = collect_results(login, password)
+
+        if _summary["complete"]:
+            _bar.progress(1.0, text="Tournament complete!")
+            _status_line.empty()
+            break
+
+        if load_state().get("status") == "complete":
+            _bar.progress(1.0, text="Tournament complete!")
+            _status_line.empty()
+            break
+
+        _bar.progress(
+            min(_poll_num / _MAX_POLLS, 1.0),
+            text=f"Poll {_poll_num} — {_summary['collected']} collected, "
+                 f"{_summary['rounds_advanced']} round(s) advanced",
+        )
+        _status_line.caption(f"Next check in {_POLL_SLEEP}s…")
+        time.sleep(_POLL_SLEEP)
+    else:
+        _bar.progress(1.0, text="Timed out — click Collect Results to resume")
+
+    st.rerun()
+
+
+def _run_collect_loop_manual(bracket_key: str, login: str, password: str) -> None:
+    """Poll collect_manual_bracket() every 2 min until bracket completes."""
+    _POLL_SLEEP = 120
+    _MAX_POLLS  = 200
+
+    _bar         = st.progress(0.0, text=f"Checking DataForSEO for ready tasks…")
+    _status_line = st.empty()
+
+    _poll_num = 0
+    while _poll_num < _MAX_POLLS:
+        _poll_num += 1
+        _sum = collect_manual_bracket(bracket_key, login, password)
+
+        if _sum["complete"]:
+            _bar.progress(1.0, text="Bracket complete!")
+            _status_line.empty()
+            break
+
+        _bar.progress(
+            min(_poll_num / _MAX_POLLS, 1.0),
+            text=f"Poll {_poll_num} — {_sum['collected']} collected, "
+                 f"{_sum['rounds_advanced']} round(s) advanced",
+        )
+        _status_line.caption(f"Next check in {_POLL_SLEEP}s…")
+        time.sleep(_POLL_SLEEP)
+    else:
+        _bar.progress(1.0, text="Timed out — click Collect to resume")
+
+    st.rerun()
 
 
 # ── Main render ───────────────────────────────────────────────────────────────
@@ -225,90 +295,13 @@ def render():
                 with st.spinner("Submitting round 1 tasks…"):
                     start_tournament(steam_list, nonsteam_list, login, password,
                                      pingback_url=PINGBACK_URL)
-                st.rerun()
+                _run_collect_loop_tournament(login, password)
 
     # ── Status: RUNNING ───────────────────────────────────────────────────────
     elif _status == "running":
-        _s_bracket  = _t_state.get("steam", {})
-        _ns_bracket = _t_state.get("non_steam", {})
-
-        def _bracket_status(bracket_data: dict, label: str) -> None:
-            rnum = bracket_data.get("current_round", 1)
-            rdata = bracket_data.get("rounds", {}).get(str(rnum), {})
-            tasks = rdata.get("tasks", [])
-            done  = sum(1 for t in tasks if t["status"] in ("complete", "failed"))
-            total = len(tasks)
-            byes  = len(rdata.get("bye_games", []))
-            is_fin = rdata.get("is_final", False)
-            fin_tag = " (final round)" if is_fin else ""
-            if bracket_data.get("finalists"):
-                st.success(f"**{label}**: finalists found — {', '.join(bracket_data['finalists'])}")
-            elif not bracket_data.get("pool"):
-                st.info(f"**{label}**: no games entered")
-            else:
-                st.info(f"**{label}**: Round {rnum}{fin_tag} — {done}/{total} tasks complete"
-                        + (f", {byes} bye(s)" if byes else ""))
-
-        _bracket_status(_s_bracket,  "Steam")
-        _bracket_status(_ns_bracket, "Non-Steam")
-
-        _col1, _col2 = st.columns(2)
-        with _col1:
-            if st.button("🔄 Collect Results", key="collect_results_btn"):
-                with st.spinner("Polling DataForSEO tasks_ready…"):
-                    _summary = collect_results(login, password)
-                st.success(
-                    f"Checked {_summary['checked']} ready — "
-                    f"collected {_summary['collected']}, "
-                    f"{_summary['rounds_advanced']} round(s) advanced, "
-                    f"{_summary['errors']} error(s)."
-                )
-                st.rerun()
-        with _col2:
-            if st.button("🗑 Reset Tournament", key="reset_running_btn"):
-                st.session_state["_confirm_reset"] = True
-
-        if st.session_state.get("_confirm_reset"):
-            st.warning("This will clear all tournament progress. Are you sure?")
-            _r1, _r2 = st.columns(2)
-            with _r1:
-                if st.button("Yes, reset", key="confirm_reset_yes"):
-                    save_state({"pingback_url": PINGBACK_URL, "status": "idle",
-                                "steam": {"rounds": {}, "current_round": 1, "pool": [],
-                                          "finalists": [], "all_bye_games": []},
-                                "non_steam": {"rounds": {}, "current_round": 1, "pool": [],
-                                              "finalists": [], "all_bye_games": []},
-                                "anchor_pool": [], "selected_anchors": []})
-                    st.session_state.pop("_confirm_reset", None)
-                    st.rerun()
-            with _r2:
-                if st.button("Cancel", key="confirm_reset_no"):
-                    st.session_state.pop("_confirm_reset", None)
-                    st.rerun()
-
-        # Live results tables per bracket
-        for _b_key, _b_label in (("steam", "🚀 Steam"), ("non_steam", "📽️ Non-Steam")):
-            _b = _t_state.get(_b_key, {})
-            if not _b.get("rounds"):
-                continue
-            with st.expander(f"{_b_label} bracket rounds", expanded=False):
-                for _rn in sorted(_b["rounds"].keys(), key=int):
-                    _rd = _b["rounds"][_rn]
-                    _fin_tag = " (final)" if _rd.get("is_final") else ""
-                    st.caption(f"**Round {_rn}{_fin_tag}** — byes: {_rd.get('bye_games', [])}")
-                    _rows = []
-                    for _ti, _t in enumerate(_rd.get("tasks", [])):
-                        _scores = _t.get("scores", {})
-                        _winner = _t.get("winner", "—")
-                        _rows.append({
-                            "Group":    _ti + 1,
-                            "Keywords": ", ".join(_t.get("keywords", [])),
-                            "Scores":   ", ".join(f"{k}: {v:.1f}" for k, v in _scores.items()) if _scores else "pending",
-                            "Winner":   _winner or "—",
-                            "Status":   _t.get("status", "pending"),
-                        })
-                    if _rows:
-                        st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+        # Auto-resume polling on page load — mirrors tab_steam.py / tab_nonsteam.py pattern
+        _run_collect_loop_tournament(login, password)
+        return
 
     # ── Status: COMPLETE ──────────────────────────────────────────────────────
     elif _status == "complete":
@@ -370,40 +363,9 @@ def render():
                 st.rerun()
 
         elif _bstatus == "running":
-            rnum  = _b.get("current_round", 1)
-            rdata = _b.get("rounds", {}).get(str(rnum), {})
-            tasks = rdata.get("tasks", [])
-            done  = sum(1 for t in tasks if t["status"] in ("complete", "failed"))
-            total = len(tasks)
-            byes  = len(rdata.get("bye_games", []))
-            fin_tag = " (final round)" if rdata.get("is_final") else ""
-            st.info(
-                f"Round {rnum}{fin_tag} — {done}/{total} tasks complete"
-                + (f", {byes} bye(s)" if byes else "")
-            )
-            _c1, _c2 = st.columns(2)
-            with _c1:
-                if st.button("🔄 Collect Results", key=f"collect_manual_{bracket_key}"):
-                    with st.spinner("Polling DataForSEO tasks_ready…"):
-                        _sum = collect_manual_bracket(bracket_key, login, password)
-                    st.success(
-                        f"Checked {_sum['checked']} ready — "
-                        f"collected {_sum['collected']}, "
-                        f"{_sum['rounds_advanced']} round(s) advanced, "
-                        f"{_sum['errors']} error(s)."
-                    )
-                    st.rerun()
-            with _c2:
-                if st.button("🗑 Reset", key=f"reset_manual_{bracket_key}"):
-                    _m_state[bracket_key] = {"rounds": {}, "current_round": 1,
-                                             "pool": [], "finalists": [], "all_bye_games": []}
-                    _m_state["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
-                                               "task_id": None, "keywords": [], "cleaned_keywords": [],
-                                               "scores": {}, "winner": None, "status": "idle"}
-                    save_manual_state(_m_state)
-                    st.rerun()
-            with st.expander("Bracket rounds", expanded=False):
-                _render_bracket_rounds(_b)
+            # Auto-resume polling on page load — mirrors auto-tournament pattern
+            _run_collect_loop_manual(bracket_key, login, password)
+            return
 
         elif _bstatus == "complete":
             finalists = _b.get("finalists", [])
