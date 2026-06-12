@@ -114,69 +114,53 @@ def _get_creds() -> tuple[str, str]:
 # ── Auto-poll loops ───────────────────────────────────────────────────────────
 
 def _run_collect_loop_tournament(login: str, password: str) -> None:
-    """Poll collect_results() every 2 min until tournament completes. Mirrors tab_steam.py pattern."""
-    _POLL_SLEEP = 120  # seconds between tasks_ready calls (2 min)
-    _MAX_POLLS  = 200  # safety ceiling
-
+    """
+    One poll cycle: collect results, sleep 2 min, then st.rerun().
+    Rerunning re-renders the whole page (tables included) with fresh state.
+    """
     _bar         = st.progress(0.0, text="Checking DataForSEO for ready tasks…")
     _status_line = st.empty()
 
-    _poll_num = 0
-    while _poll_num < _MAX_POLLS:
-        _poll_num += 1
-        _summary = collect_results(login, password)
+    _summary = collect_results(login, password)
 
-        if _summary["complete"]:
-            _bar.progress(1.0, text="Tournament complete!")
-            _status_line.empty()
-            break
+    if _summary["complete"] or load_state().get("status") == "complete":
+        _bar.progress(1.0, text="Tournament complete!")
+        _status_line.empty()
+        st.rerun()
+        return
 
-        if load_state().get("status") == "complete":
-            _bar.progress(1.0, text="Tournament complete!")
-            _status_line.empty()
-            break
-
-        _bar.progress(
-            min(_poll_num / _MAX_POLLS, 1.0),
-            text=f"Poll {_poll_num} — {_summary['collected']} collected, "
-                 f"{_summary['rounds_advanced']} round(s) advanced",
-        )
-        _status_line.caption(f"Next check in {_POLL_SLEEP}s…")
-        time.sleep(_POLL_SLEEP)
-    else:
-        _bar.progress(1.0, text="Timed out — click Collect Results to resume")
-
+    _bar.progress(
+        1.0,
+        text=f"Collected {_summary['collected']}, "
+             f"{_summary['rounds_advanced']} round(s) advanced, "
+             f"{_summary['errors']} error(s)",
+    )
+    _status_line.caption("Next check in 120s…")
+    time.sleep(120)
     st.rerun()
 
 
 def _run_collect_loop_manual(bracket_key: str, login: str, password: str) -> None:
-    """Poll collect_manual_bracket() every 2 min until bracket completes."""
-    _POLL_SLEEP = 120
-    _MAX_POLLS  = 200
-
-    _bar         = st.progress(0.0, text=f"Checking DataForSEO for ready tasks…")
+    """One poll cycle for a manual bracket — collect, sleep 2 min, rerun."""
+    _bar         = st.progress(0.0, text="Checking DataForSEO for ready tasks…")
     _status_line = st.empty()
 
-    _poll_num = 0
-    while _poll_num < _MAX_POLLS:
-        _poll_num += 1
-        _sum = collect_manual_bracket(bracket_key, login, password)
+    _sum = collect_manual_bracket(bracket_key, login, password)
 
-        if _sum["complete"]:
-            _bar.progress(1.0, text="Bracket complete!")
-            _status_line.empty()
-            break
+    if _sum["complete"]:
+        _bar.progress(1.0, text="Bracket complete!")
+        _status_line.empty()
+        st.rerun()
+        return
 
-        _bar.progress(
-            min(_poll_num / _MAX_POLLS, 1.0),
-            text=f"Poll {_poll_num} — {_sum['collected']} collected, "
-                 f"{_sum['rounds_advanced']} round(s) advanced",
-        )
-        _status_line.caption(f"Next check in {_POLL_SLEEP}s…")
-        time.sleep(_POLL_SLEEP)
-    else:
-        _bar.progress(1.0, text="Timed out — click Collect to resume")
-
+    _bar.progress(
+        1.0,
+        text=f"Collected {_sum['collected']}, "
+             f"{_sum['rounds_advanced']} round(s) advanced, "
+             f"{_sum['errors']} error(s)",
+    )
+    _status_line.caption("Next check in 120s…")
+    time.sleep(120)
     st.rerun()
 
 
