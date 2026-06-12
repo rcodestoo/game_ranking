@@ -42,7 +42,15 @@ def _date_range() -> tuple[str, str]:
 # ── Credentials ───────────────────────────────────────────────────────────────
 
 def load_credentials() -> tuple[str, str]:
-    """Return (login, password) from cache/dataforseo_creds.json, or ('', '')."""
+    """Return (login, password) from st.secrets, then cache/dataforseo_creds.json, or ('', '')."""
+    try:
+        import streamlit as st
+        login    = st.secrets.get("DATAFORSEO_LOGIN", "")
+        password = st.secrets.get("DATAFORSEO_PASSWORD", "")
+        if login and password:
+            return str(login), str(password)
+    except Exception:
+        pass
     if CREDS_FILE.exists():
         try:
             data = json.loads(CREDS_FILE.read_text(encoding="utf-8"))

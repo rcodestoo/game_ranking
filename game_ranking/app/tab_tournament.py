@@ -87,6 +87,18 @@ def _render_bracket_rounds(bracket_data: dict) -> None:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
+def _creds_from_secrets() -> tuple[str, str] | None:
+    """Return (login, password) if both are present in st.secrets, else None."""
+    try:
+        login    = st.secrets.get("DATAFORSEO_LOGIN", "")
+        password = st.secrets.get("DATAFORSEO_PASSWORD", "")
+        if login and password:
+            return str(login), str(password)
+    except Exception:
+        pass
+    return None
+
+
 def _get_creds() -> tuple[str, str]:
     """Return (login, password) from session_state, falling back to file."""
     login    = st.session_state.get("dfs_login", "")
@@ -111,18 +123,22 @@ def render():
     # ── Credentials ───────────────────────────────────────────────────────────
     login, password = _get_creds()
 
+    _using_secrets = bool(_creds_from_secrets())
     with st.expander("🔑 DataForSEO Credentials", expanded=not bool(login)):
-        c1, c2 = st.columns(2)
-        with c1:
-            new_login = st.text_input("Login (email)", value=login, key="dfs_login_input")
-        with c2:
-            new_pass = st.text_input("Password", value=password, type="password", key="dfs_pass_input")
-        if st.button("Save Credentials", key="save_dfs_creds"):
-            save_credentials(new_login, new_pass)
-            st.session_state["dfs_login"]    = new_login
-            st.session_state["dfs_password"] = new_pass
-            login, password = new_login, new_pass
-            st.success("Credentials saved.")
+        if _using_secrets:
+            st.info("Credentials loaded from Streamlit secrets (`DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD`).")
+        else:
+            c1, c2 = st.columns(2)
+            with c1:
+                new_login = st.text_input("Login (email)", value=login, key="dfs_login_input")
+            with c2:
+                new_pass = st.text_input("Password", value=password, type="password", key="dfs_pass_input")
+            if st.button("Save Credentials", key="save_dfs_creds"):
+                save_credentials(new_login, new_pass)
+                st.session_state["dfs_login"]    = new_login
+                st.session_state["dfs_password"] = new_pass
+                login, password = new_login, new_pass
+                st.success("Credentials saved.")
 
     if not login or not password:
         st.warning("Enter DataForSEO credentials above to use the tournament.")
