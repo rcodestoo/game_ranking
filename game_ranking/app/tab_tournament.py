@@ -215,6 +215,8 @@ def render():
                     "Top N games per source", min_value=8, max_value=256, value=32, step=8,
                     key="tournament_top_n",
                 )
+            else:
+                st.caption("All games will be included — no cap applied.")
         with c2:
             _df_s = st.session_state.get("df_steam")
             _df_ns = st.session_state.get("df_nonsteam")
@@ -425,16 +427,28 @@ def render():
             with st.expander("Bracket rounds", expanded=True):
                 _render_bracket_rounds(_b)
             # Reset must be checked BEFORE the loop so a click during sleep is caught on the next rerun
+            _confirm_key = f"_confirm_reset_manual_{bracket_key}"
             if st.button("🗑 Reset", key=f"reset_manual_{bracket_key}"):
-                _m_state[bracket_key] = {"rounds": {}, "current_round": 1,
-                                         "pool": [], "finalists": [], "all_bye_games": []}
-                _m_state["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
-                                           "task_id": None, "keywords": [], "cleaned_keywords": [],
-                                           "scores": {}, "winner": None, "status": "idle"}
-                save_manual_state(_m_state)
-                st.rerun()
+                st.session_state[_confirm_key] = True
+            if st.session_state.get(_confirm_key):
+                st.warning("This will clear all bracket progress. Are you sure?")
+                _rm1, _rm2 = st.columns(2)
+                with _rm1:
+                    if st.button("Yes, reset", key=f"confirm_reset_manual_{bracket_key}_yes"):
+                        _m_state[bracket_key] = {"rounds": {}, "current_round": 1,
+                                                 "pool": [], "finalists": [], "all_bye_games": []}
+                        _m_state["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
+                                                   "task_id": None, "keywords": [], "cleaned_keywords": [],
+                                                   "scores": {}, "winner": None, "status": "idle"}
+                        save_manual_state(_m_state)
+                        st.session_state.pop(_confirm_key, None)
+                        st.rerun()
+                with _rm2:
+                    if st.button("Cancel", key=f"confirm_reset_manual_{bracket_key}_no"):
+                        st.session_state.pop(_confirm_key, None)
+                        st.rerun()
             else:
-                # Auto-resume polling — only when not just reset
+                # Auto-resume polling — only when no confirmation dialog is open
                 _run_collect_loop_manual(bracket_key, login, password)
 
         elif _bstatus == "complete":
@@ -482,23 +496,22 @@ def render():
                 st.rerun()
 
         elif _gf_status == "pending":
-            st.info("Grand Final task submitted — click Collect to fetch the result.")
-            _gc1, _gc2 = st.columns(2)
-            with _gc1:
-                if st.button("🔄 Collect Grand Final", key="collect_grand_final"):
-                    with st.spinner("Polling DataForSEO tasks_ready…"):
-                        _gf_res = collect_grand_final(login, password)
-                    if _gf_res["complete"]:
+            st.info("Grand Final task submitted — polling for results…")
+            _gf_res = collect_grand_final(login, password)
+            if _gf_res["complete"]:
+                st.rerun()
+            else:
+                _gc_reset_col, _ = st.columns([1, 3])
+                with _gc_reset_col:
+                    if st.button("🗑 Reset Grand Final", key="reset_gf_pending"):
+                        _m_state2["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
+                                                    "task_id": None, "keywords": [], "cleaned_keywords": [],
+                                                    "scores": {}, "winner": None, "status": "idle"}
+                        save_manual_state(_m_state2)
                         st.rerun()
-                    else:
-                        st.info("Result not ready yet — try again in a moment.")
-            with _gc2:
-                if st.button("🗑 Reset Grand Final", key="reset_gf_pending"):
-                    _m_state2["grand_final"] = {"steam_champion": None, "nonsteam_champion": None,
-                                                "task_id": None, "keywords": [], "cleaned_keywords": [],
-                                                "scores": {}, "winner": None, "status": "idle"}
-                    save_manual_state(_m_state2)
-                    st.rerun()
+                st.caption("Result not ready yet — next check in 30s…")
+                time.sleep(30)
+                st.rerun()
 
         elif _gf_status in ("complete", "failed"):
             _winner = _gf.get("winner")

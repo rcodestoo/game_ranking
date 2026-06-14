@@ -28,6 +28,7 @@ from pipelines.refresh_trends_pipeline import (
     write_scores_to_csv,
 )
 from config import TRENDS_CACHE_FILE
+from pipelines.trends_pipeline import load_tournament_anchor
 
 
 def _sync_from_steam_dates():
@@ -82,6 +83,8 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
     if "steam_reset_filters" not in st.session_state:
         st.session_state.steam_reset_filters = False
+    if "applied_filters_steam" not in st.session_state:
+        st.session_state.applied_filters_steam = None  # None = show all (no filter applied yet)
 
     # ── Summary metrics ───────────────────────────────────────────────────────
     _today_str = dt.date.today().isoformat()
@@ -104,10 +107,19 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
     m5.metric("Trends Cached", _trends_cached, help="Games with a cached Google Trends score", border=True)
 
     _anchor = st.session_state.get("trends_anchor")
+    _anchor_meta_top = load_tournament_anchor()
     if _trends_thread_state["running"]:
         st.info(f"🔄 {_trends_thread_state.get('progress', 'Trends updating...')}")
     elif _anchor:
-        st.caption(f"Trends anchor: **{_anchor}**")
+        _run_at_top = _anchor_meta_top.get("run_at") if _anchor_meta_top else None
+        if _run_at_top:
+            try:
+                _run_at_fmt = dt.datetime.strptime(_run_at_top, "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                _run_at_fmt = _run_at_top
+            st.caption(f"Trends anchor: **{_anchor}** — set {_run_at_fmt}")
+        else:
+            st.caption(f"Trends anchor: **{_anchor}**")
     else:
         st.caption("No trends anchor yet — upload a CSV to run tournament")
 
@@ -179,42 +191,54 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
         btn_c1, btn_c2 = st.columns([1, 1])
         with btn_c1:
-            apply_steam = st.button("Apply Filters", key="steam_apply", width="stretch")
+            if st.button("Apply Filters", key="steam_apply", width="stretch"):
+                st.session_state.applied_filters_steam = {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "genres": selected_genres,
+                    "name_search": steam_name_search,
+                    "score_range": score_range,
+                    "follower_max": follower_max,
+                }
+                st.rerun()
         with btn_c2:
             if st.button("Reset Filters", key="steam_revert", width="stretch"):
                 st.session_state.steam_reset_filters = True
+                st.session_state.applied_filters_steam = None
                 st.rerun()
 
     if st.session_state.steam_reset_filters:
         st.session_state.steam_reset_filters = False
 
-    # ── Apply filters ─────────────────────────────────────────────────────────
+    # ── Apply filters (lazy — only when "Apply Filters" has been clicked) ─────
     df_filtered_steam = df_ranked.copy()
+    _afs = st.session_state.applied_filters_steam
 
-    if 'ReleaseDate' in df_filtered_steam.columns:
-        rd = pd.to_datetime(df_filtered_steam['ReleaseDate'], errors='coerce', format='mixed', dayfirst=True)
-        df_filtered_steam = df_filtered_steam[rd.between(pd.Timestamp(start_date), pd.Timestamp(end_date)) | rd.isna()]
+    if _afs is not None:
+        if 'ReleaseDate' in df_filtered_steam.columns:
+            rd = pd.to_datetime(df_filtered_steam['ReleaseDate'], errors='coerce', format='mixed', dayfirst=True)
+            df_filtered_steam = df_filtered_steam[rd.between(pd.Timestamp(_afs["start_date"]), pd.Timestamp(_afs["end_date"])) | rd.isna()]
 
-    if selected_genres and 'Genres' in df_filtered_steam.columns:
-        def has_genre(genres_val):
-            genres_list = genres_val if isinstance(genres_val, list) else [g.strip() for g in str(genres_val).split(',')]
-            return any(g in selected_genres for g in genres_list)
-        df_filtered_steam = df_filtered_steam[df_filtered_steam['Genres'].apply(has_genre)]
+        if _afs["genres"] and 'Genres' in df_filtered_steam.columns:
+            def has_genre(genres_val):
+                genres_list = genres_val if isinstance(genres_val, list) else [g.strip() for g in str(genres_val).split(',')]
+                return any(g in _afs["genres"] for g in genres_list)
+            df_filtered_steam = df_filtered_steam[df_filtered_steam['Genres'].apply(has_genre)]
 
-    if steam_name_search and 'Name' in df_filtered_steam.columns:
-        df_filtered_steam = df_filtered_steam[
-            df_filtered_steam['Name'].str.contains(steam_name_search, case=False, na=False)
-        ]
+        if _afs["name_search"] and 'Name' in df_filtered_steam.columns:
+            df_filtered_steam = df_filtered_steam[
+                df_filtered_steam['Name'].str.contains(_afs["name_search"], case=False, na=False)
+            ]
 
-    if 'Final Priority Score' in df_filtered_steam.columns:
-        df_filtered_steam = df_filtered_steam[
-            df_filtered_steam['Final Priority Score'].between(score_range[0], score_range[1])
-        ]
+        if 'Final Priority Score' in df_filtered_steam.columns:
+            df_filtered_steam = df_filtered_steam[
+                df_filtered_steam['Final Priority Score'].between(_afs["score_range"][0], _afs["score_range"][1])
+            ]
 
-    if 'FollowerCount' in df_filtered_steam.columns:
-        df_filtered_steam = df_filtered_steam[
-            df_filtered_steam['FollowerCount'].fillna(0).between(0, follower_max)
-        ]
+        if 'FollowerCount' in df_filtered_steam.columns:
+            df_filtered_steam = df_filtered_steam[
+                df_filtered_steam['FollowerCount'].fillna(0).between(0, _afs["follower_max"])
+            ]
 
     df_filtered_steam = df_filtered_steam.reset_index(drop=True)
     df_filtered_steam.index = df_filtered_steam.index + 1
@@ -328,7 +352,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             if _ts:
                 try:
                     _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
-                    st.caption(f"Last fetched: {_dt.strftime('%d %b %Y, %H:%M')}")
+                    st.caption(f"Last fetched: {_dt.strftime('%d/%m/%Y %H:%M')}")
                 except Exception:
                     st.caption(f"Last fetched: {_ts}")
             else:

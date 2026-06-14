@@ -23,6 +23,7 @@ from pipelines.refresh_trends_pipeline import (
     write_scores_to_csv,
 )
 from config import TRENDS_CACHE_FILE
+from pipelines.trends_pipeline import load_tournament_anchor
 
 
 def _sync_from_ns_dates():
@@ -45,6 +46,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
         )
 
     # ── Deduplicate: keep most recent row per Game Title ──────────────────────
+    _raw_row_count = len(df_nonsteam)
     if 'Game Title' in df_nonsteam.columns:
         # Determine recency column: prefer date_appended, then YouTube ReleaseDate, then Release Date
         if 'date_appended' in df_nonsteam.columns:
@@ -66,14 +68,26 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
         else:
             df_nonsteam = df_nonsteam.drop_duplicates(subset=['Game Title'], keep='last').reset_index(drop=True)
 
+    _after_dedup_count = len(df_nonsteam)
+    _dedup_merged = _raw_row_count - _after_dedup_count
+
     st.header("Non-Steam Game Ranking")
     st.caption(f"📊 Loading from {nonsteam_source_name}")
 
     _anchor = st.session_state.get("trends_anchor")
+    _anchor_meta_top = load_tournament_anchor()
     if _trends_thread_state["running"]:
         st.info(f"🔄 {_trends_thread_state.get('progress', 'Trends updating...')}")
     elif _anchor:
-        st.caption(f"Trends anchor: **{_anchor}**")
+        _run_at_top = _anchor_meta_top.get("run_at") if _anchor_meta_top else None
+        if _run_at_top:
+            try:
+                _run_at_fmt = dt.datetime.strptime(_run_at_top, "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                _run_at_fmt = _run_at_top
+            st.caption(f"Trends anchor: **{_anchor}** — set {_run_at_fmt}")
+        else:
+            st.caption(f"Trends anchor: **{_anchor}**")
     else:
         st.caption("No trends anchor yet — upload a CSV to run tournament")
 
@@ -172,7 +186,18 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
     df_non_steam_ranked['_on_steam'] = (
         df_non_steam_ranked['Game Title'].astype(str).str.strip().str.lower().isin(steam_titles)
     )
+    _before_steam_filter = len(df_non_steam_ranked)
     df_non_steam_ranked = df_non_steam_ranked[~df_non_steam_ranked['_on_steam']].reset_index(drop=True)
+    _steam_removed = _before_steam_filter - len(df_non_steam_ranked)
+
+    # ── Data info caption ─────────────────────────────────────────────────────
+    _info_parts = []
+    if _dedup_merged > 0:
+        _info_parts.append(f"{_dedup_merged} duplicate title(s) merged")
+    if _steam_removed > 0:
+        _info_parts.append(f"{_steam_removed} already on Steam removed")
+    if _info_parts:
+        st.caption(f"ℹ️ From {_raw_row_count} raw rows → {len(df_non_steam_ranked)} ranked games ({', '.join(_info_parts)})")
 
     # ── Summary metrics ───────────────────────────────────────────────────────
     _today_str = today.isoformat()
@@ -192,6 +217,8 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
 
     if "ns_reset_filters" not in st.session_state:
         st.session_state.ns_reset_filters = False
+    if "applied_filters_ns" not in st.session_state:
+        st.session_state.applied_filters_ns = None  # None = show all (no filter applied yet)
 
     # ── Filters ───────────────────────────────────────────────────────────────
     with st.expander("🔍 Filters", expanded=False):
@@ -241,31 +268,41 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
 
         btn_c1, btn_c2 = st.columns([1, 1])
         with btn_c1:
-            apply_ns = st.button("Apply Filters", key="ns_apply", width="stretch")
+            if st.button("Apply Filters", key="ns_apply", width="stretch"):
+                st.session_state.applied_filters_ns = {
+                    "start_date": ns_start,
+                    "end_date": ns_end,
+                    "platforms": selected_platforms,
+                    "statuses": selected_statuses,
+                }
+                st.rerun()
         with btn_c2:
             if st.button("Reset Filters", key="ns_revert", width="stretch"):
                 st.session_state.ns_reset_filters = True
+                st.session_state.applied_filters_ns = None
                 st.rerun()
 
     if st.session_state.ns_reset_filters:
         st.session_state.ns_reset_filters = False
 
-    # ── Apply filters ─────────────────────────────────────────────────────────
+    # ── Apply filters (lazy — only when "Apply Filters" has been clicked) ─────
     df_filtered_ns = df_non_steam_ranked.copy()
+    _afns = st.session_state.applied_filters_ns
 
-    if 'Release Date' in df_filtered_ns.columns:
-        rel_dates = pd.to_datetime(df_filtered_ns['Release Date'], errors='coerce', format='mixed', dayfirst=True)
-        in_range = rel_dates.between(pd.Timestamp(ns_start), pd.Timestamp(ns_end))
-        df_filtered_ns = df_filtered_ns[rel_dates.isna() | in_range]
+    if _afns is not None:
+        if 'Release Date' in df_filtered_ns.columns:
+            rel_dates = pd.to_datetime(df_filtered_ns['Release Date'], errors='coerce', format='mixed', dayfirst=True)
+            in_range = rel_dates.between(pd.Timestamp(_afns["start_date"]), pd.Timestamp(_afns["end_date"]))
+            df_filtered_ns = df_filtered_ns[rel_dates.isna() | in_range]
 
-    if selected_platforms and 'Platforms' in df_filtered_ns.columns:
-        def has_platform(val):
-            plats = val if isinstance(val, list) else [p.strip() for p in str(val).split(',')]
-            return any(p in selected_platforms for p in plats)
-        df_filtered_ns = df_filtered_ns[df_filtered_ns['Platforms'].apply(has_platform)]
+        if _afns["platforms"] and 'Platforms' in df_filtered_ns.columns:
+            def has_platform(val):
+                plats = val if isinstance(val, list) else [p.strip() for p in str(val).split(',')]
+                return any(p in _afns["platforms"] for p in plats)
+            df_filtered_ns = df_filtered_ns[df_filtered_ns['Platforms'].apply(has_platform)]
 
-    if selected_statuses and 'SteamStatus' in df_filtered_ns.columns:
-        df_filtered_ns = df_filtered_ns[df_filtered_ns['SteamStatus'].isin(selected_statuses)]
+        if _afns["statuses"] and 'SteamStatus' in df_filtered_ns.columns:
+            df_filtered_ns = df_filtered_ns[df_filtered_ns['SteamStatus'].isin(_afns["statuses"])]
 
     df_filtered_ns = df_filtered_ns.reset_index(drop=True)
     df_filtered_ns.index = df_filtered_ns.index + 1
@@ -375,7 +412,7 @@ def render(df_steam: pd.DataFrame, global_date_min: dt.date, global_date_max: dt
         if _ts:
             try:
                 _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
-                st.caption(f"Last fetched: {_dt.strftime('%d %b %Y, %H:%M')}")
+                st.caption(f"Last fetched: {_dt.strftime('%d/%m/%Y %H:%M')}")
             except Exception:
                 st.caption(f"Last fetched: {_ts}")
         else:

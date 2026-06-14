@@ -250,14 +250,14 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
         _gt_btn_col, _gt_ts_col = st.columns([2, 3])
         with _gt_btn_col:
             _do_refresh_all = st.button(
-                "🔄 Refresh Trends", key="inv_refresh_all_trends",
-                help="Fetch scores for all inventory games (ignores current filter).",
+                "🔄 Refresh All Trends", key="inv_refresh_all_trends",
+                help="Fetch scores for ALL inventory games — ignores the current filter.",
             )
         with _gt_ts_col:
             _all_ts = st.session_state.get("inv_all_trends_fetched_at")
             if _all_ts:
                 try:
-                    st.caption(f"Last fetched: {dt.datetime.strptime(_all_ts, '%Y-%m-%d %H:%M:%S').strftime('%d %b %Y, %H:%M')}")
+                    st.caption(f"Last fetched: {dt.datetime.strptime(_all_ts, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')}")
                 except Exception:
                     st.caption(f"Last fetched: {_all_ts}")
             else:
@@ -410,8 +410,8 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                 disabled=st.session_state.fetching_players,
             )
         with trends_col:
-            if st.button("📊 Refresh Trends", key="fetch_inv_trends",
-                         help="Fetch Google Trends scores for filtered games", width="stretch"):
+            if st.button("📊 Refresh Trends (Filtered)", key="fetch_inv_trends",
+                         help="Fetch Google Trends scores for the currently filtered games only", width="stretch"):
                 games = filtered["Game Name"].dropna().unique().tolist()
                 _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
                 games_to_fetch = filter_stale_trends_games(games, _cached_ts)
@@ -455,7 +455,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             if _ts:
                 try:
                     _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
-                    st.caption(f"Last fetched: {_dt.strftime('%d %b %Y, %H:%M')}")
+                    st.caption(f"Last fetched: {_dt.strftime('%d/%m/%Y %H:%M')}")
                 except Exception:
                     st.caption(f"Last fetched: {_ts}")
             else:
@@ -478,7 +478,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
             import datetime as _dt
             result_df = fetch_player_data(game_names, progress_callback=_on_progress)
-            st.session_state.player_count_last_fetched = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+            st.session_state.player_count_last_fetched = _dt.datetime.now().strftime("%d/%m/%Y %H:%M")
             result_df["fetched_at"] = st.session_state.player_count_last_fetched
             result_df.to_csv(STEAMSPY_CACHE_FILE, index=False)
             st.session_state.player_count_df = result_df.drop(columns=["fetched_at"])

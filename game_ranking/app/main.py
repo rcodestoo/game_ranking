@@ -78,6 +78,10 @@ if st.session_state.uploaded_steam_bytes:
             preview_steam = pd.read_csv(io.BytesIO(st.session_state.uploaded_steam_bytes), encoding="latin-1")
         st.dataframe(preview_steam.head(3), width='stretch')
         st.caption(f"Rows: {len(preview_steam)}, Columns: {len(preview_steam.columns)}")
+        _steam_preview_required = ['Name', 'FollowerCount', 'Developers', 'Genres', 'ReleaseDate']
+        _steam_preview_missing = [c for c in _steam_preview_required if c not in preview_steam.columns]
+        if _steam_preview_missing:
+            st.warning(f"⚠️ Missing required columns: {', '.join(_steam_preview_missing)}")
 
     if st.sidebar.button("📥 Load Steam Data", key="load_steam_btn"):
         try:
@@ -108,6 +112,10 @@ if st.session_state.uploaded_nonsteam_bytes:
             preview_nonsteam = pd.read_csv(io.BytesIO(st.session_state.uploaded_nonsteam_bytes), encoding="latin-1")
         st.dataframe(preview_nonsteam.head(3), width='stretch')
         st.caption(f"Rows: {len(preview_nonsteam)}, Columns: {len(preview_nonsteam.columns)}")
+        _ns_preview_required = ['Game Title', 'Developers', 'SteamStatus', 'YouTube Views']
+        _ns_preview_missing = [c for c in _ns_preview_required if c not in preview_nonsteam.columns]
+        if _ns_preview_missing:
+            st.warning(f"⚠️ Missing required columns: {', '.join(_ns_preview_missing)}")
 
     if st.sidebar.button("📥 Load Non-Steam Data", key="load_nonsteam_btn"):
         try:
