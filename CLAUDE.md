@@ -118,8 +118,10 @@ SteamStatus, date_appended
 - **Tournament flow** (new): batch-POST per round; state persisted in `cache/tournament_state.json`; results collected via "Collect Results" button (polls `tasks_ready` + `task_get`); pingback_url set on every task; each bracket runs standard knockout until pool ≤ 5, final round top-2 = finalists; anchor pool = Steam top-2 + Non-Steam top-2 + all bye-games; user selects anchor from pool
 - **Tournament state file**: `cache/tournament_state.json` — survives restarts, tracks rounds/tasks/scores/finalists per bracket
 - **Anchor persistence**: `cache/tournament_anchor.json` — set from anchor pool selection, used by manual Fetch Trends buttons in other tabs
+- **Trends results cache**: `cache/trends_results_cache.json` — keyword-level cache (30-day TTL); re-running the tournament with the same games skips DataForSEO API calls for groups already compared. Managed by `pipelines/trends_cache.py`. Task status `"cached"` means result came from cache, not API.
 - **Old blocking pipeline** (`trends_pipeline.py`) still present; `load_tournament_anchor()` / `save_tournament_anchor()` reused by new pipeline and all tabs
 - DataForSEO credentials stored in `cache/dataforseo_creds.json` (login + password, HTTP Basic auth)
+- **Poll interval**: UI checks DataForSEO every 30s (was 120s)
 
 ---
 

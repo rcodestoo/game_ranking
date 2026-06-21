@@ -135,13 +135,13 @@ def _run_collect_loop_tournament(login: str, password: str) -> None:
              f"{_summary['rounds_advanced']} round(s) advanced, "
              f"{_summary['errors']} error(s)",
     )
-    _status_line.caption("Next check in 120s…")
-    time.sleep(120)
+    _status_line.caption("Next check in 30s…")
+    time.sleep(30)
     st.rerun()
 
 
 def _run_collect_loop_manual(bracket_key: str, login: str, password: str) -> None:
-    """One poll cycle for a manual bracket — collect, sleep 2 min, rerun."""
+    """One poll cycle for a manual bracket — collect, sleep 30s, rerun."""
     _bar         = st.progress(0.0, text="Checking DataForSEO for ready tasks…")
     _status_line = st.empty()
 
@@ -159,8 +159,8 @@ def _run_collect_loop_manual(bracket_key: str, login: str, password: str) -> Non
              f"{_sum['rounds_advanced']} round(s) advanced, "
              f"{_sum['errors']} error(s)",
     )
-    _status_line.caption("Next check in 120s…")
-    time.sleep(120)
+    _status_line.caption("Next check in 30s…")
+    time.sleep(30)
     st.rerun()
 
 

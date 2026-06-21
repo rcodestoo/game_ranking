@@ -36,9 +36,12 @@ State schema:
 """
 
 import json
+import logging
 import tempfile
 import os
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from config import TOURNAMENT_STATE_FILE, MANUAL_TOURNAMENT_STATE_FILE
 
@@ -116,7 +119,7 @@ def is_round_complete(state: dict, bracket: str) -> bool:
     if not tasks:
         # Round has only bye games — trivially complete
         return True
-    return all(t["status"] in ("complete", "failed") for t in tasks)
+    return all(t["status"] in ("complete", "failed", "cached") for t in tasks)
 
 
 def get_pending_task_ids(state: dict) -> dict[str, tuple[str, int, int]]:
@@ -174,6 +177,10 @@ def advance_bracket(state: dict, bracket: str) -> None:
         elif task["status"] == "failed" and task["keywords"]:
             # Fallback: advance first keyword so tournament isn't stuck
             winners.append(task["keywords"][0])
+            log.warning(
+                "[%s] Round %d: all scores zero/failed for %s — auto-advancing '%s' arbitrarily",
+                bracket, rnum, task["keywords"], task["keywords"][0],
+            )
 
     bye_games = rdata.get("bye_games", [])
     new_pool = winners + bye_games
@@ -215,6 +222,10 @@ def extract_finalists_from_final_round(state: dict, bracket: str) -> list[str]:
     if not all_scores:
         # All-zero / failed — fall back to first 2 keywords in pool order
         pool = state[bracket]["pool"]
+        log.warning(
+            "[%s] Final round: all tasks failed/zero — picking finalists arbitrarily from pool: %s",
+            bracket, pool[:2],
+        )
         return pool[:2]
 
     ranked = sorted(all_scores, key=all_scores.get, reverse=True)

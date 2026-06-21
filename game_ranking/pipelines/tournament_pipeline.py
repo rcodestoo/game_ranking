@@ -21,6 +21,12 @@ from calculation.dataforseo_trends import (
     fetch_task_result,
     GAMES_CATEGORY,
 )
+from pipelines.trends_cache import (
+    load_trends_cache,
+    save_trends_cache,
+    lookup_cached_scores,
+    write_cached_scores,
+)
 from calculation.trends_tournament import strip_edition_suffix, TOURNAMENT_GROUP_SIZE
 from pipelines.tournament_state import (
     load_state,
@@ -52,15 +58,22 @@ def _date_range() -> tuple[str, str]:
 
 # ── Round submission ──────────────────────────────────────────────────────────
 
-def submit_round(state: dict, bracket: str, login: str, password: str, save_fn=None) -> dict:
+def submit_round(
+    state: dict,
+    bracket: str,
+    login: str,
+    password: str,
+    save_fn=None,
+    cache: dict | None = None,
+) -> dict:
     """
     Submit the current round for one bracket.
 
     Splits state[bracket]["pool"] into groups of 5:
       - Group of 1 → bye (auto-advance, no API call)
-      - Group of 2–5 → one DataForSEO task
+      - Group of 2–5 → one DataForSEO task (or cache hit — no API call)
 
-    All non-bye tasks are batch-POSTed in one call (up to 100 per POST).
+    All non-bye, non-cached tasks are batch-POSTed in one call (up to 100 per POST).
     Task IDs are written back into state. State is saved before returning.
     """
     pool = state[bracket]["pool"]
@@ -99,6 +112,25 @@ def submit_round(state: dict, bracket: str, login: str, password: str, save_fn=N
             continue
 
         cleaned = [strip_edition_suffix(g) for g in group]
+
+        # Check cache before submitting to DataForSEO
+        if cache is not None:
+            cached_scores = lookup_cached_scores(cleaned, cache)
+            if cached_scores is not None:
+                scores_orig = {orig: cached_scores.get(clean, 0.0)
+                               for orig, clean in zip(group, cleaned)}
+                winner = max(scores_orig, key=scores_orig.get) if any(v > 0 for v in scores_orig.values()) else None
+                rdata["tasks"].append({
+                    "task_id":          None,
+                    "keywords":         group,
+                    "cleaned_keywords": cleaned,
+                    "scores":           scores_orig,
+                    "winner":           winner,
+                    "status":           "cached",
+                })
+                log.info("[%s] Round %d: cache hit for %s — winner: %s", bracket, rnum, group, winner)
+                continue
+
         task_dicts.append({
             "keywords":      cleaned,
             "category_code": GAMES_CATEGORY,
@@ -161,10 +193,11 @@ def collect_results(login: str, password: str) -> dict:
     if state["status"] not in ("running",):
         return {"checked": 0, "collected": 0, "rounds_advanced": 0, "errors": 0, "complete": state["status"] == "complete"}
 
+    cache = load_trends_cache()
     pending_map = get_pending_task_ids(state)
     if not pending_map:
         # No pending tasks — check if both brackets are actually done
-        _check_completion(state, login, password)
+        _check_completion(state, login, password, cache=cache)
         save_state(state)
         return {"checked": 0, "collected": 0, "rounds_advanced": 0, "errors": 0, "complete": state["status"] == "complete"}
 
@@ -193,11 +226,13 @@ def collect_results(login: str, password: str) -> dict:
         if any(v > 0 for v in scores_orig.values()):
             collected += 1
             log.info("[%s] Task %s collected — winner: %s", bracket, task_id, winner)
+            write_cached_scores(cleaned_kws, scores_raw, cache)
         else:
             errors += 1
             log.warning("[%s] Task %s all-zero scores", bracket, task_id)
 
-    rounds_advanced = _check_completion(state, login, password)
+    rounds_advanced = _check_completion(state, login, password, cache=cache)
+    save_trends_cache(cache)
     save_state(state)
 
     return {
@@ -209,7 +244,7 @@ def collect_results(login: str, password: str) -> dict:
     }
 
 
-def _check_completion(state: dict, login: str, password: str) -> int:
+def _check_completion(state: dict, login: str, password: str, cache: dict | None = None) -> int:
     """
     For each bracket: if its current round is complete, advance it.
     If both brackets have finalists, assemble anchor pool and mark complete.
@@ -238,7 +273,7 @@ def _check_completion(state: dict, login: str, password: str) -> int:
             rounds_advanced += 1
             # Submit next round if bracket not yet done
             if not state[bracket].get("finalists"):
-                submit_round(state, bracket, login, password)
+                submit_round(state, bracket, login, password, cache=cache)
                 # Note: submit_round calls save_state internally; that's OK — it's idempotent
                 rounds_advanced += 1  # count the submission as another advance
 
@@ -271,12 +306,14 @@ def start_manual_bracket(bracket: str, games: list[str], login: str, password: s
         save_manual_state(state)
         return state
 
+    cache = load_trends_cache()
     state[bracket]["rounds"]["1"] = {
         "is_final": len(games) <= _GROUP_SIZE,
         "tasks":     [],
         "bye_games": [],
     }
-    submit_round(state, bracket, login, password, save_fn=save_manual_state)
+    submit_round(state, bracket, login, password, save_fn=save_manual_state, cache=cache)
+    save_trends_cache(cache)
     return state
 
 
@@ -286,10 +323,11 @@ def collect_manual_bracket(bracket: str, login: str, password: str) -> dict:
     Returns a summary dict identical in shape to collect_results().
     """
     state = load_manual_state()
+    cache = load_trends_cache()
     pending_map = get_manual_pending_task_ids(state, bracket)
 
     if not pending_map:
-        rounds_advanced = _advance_manual_if_complete(state, bracket, login, password)
+        rounds_advanced = _advance_manual_if_complete(state, bracket, login, password, cache=cache)
         save_manual_state(state)
         return {"checked": 0, "collected": 0, "rounds_advanced": rounds_advanced,
                 "errors": 0, "complete": bool(state[bracket].get("finalists"))}
@@ -318,11 +356,13 @@ def collect_manual_bracket(bracket: str, login: str, password: str) -> dict:
         if any(v > 0 for v in scores_orig.values()):
             collected += 1
             log.info("[manual/%s] Task %s collected — winner: %s", bracket, task_id, winner)
+            write_cached_scores(cleaned_kws, scores_raw, cache)
         else:
             errors += 1
             log.warning("[manual/%s] Task %s all-zero scores", bracket, task_id)
 
-    rounds_advanced = _advance_manual_if_complete(state, bracket, login, password)
+    rounds_advanced = _advance_manual_if_complete(state, bracket, login, password, cache=cache)
+    save_trends_cache(cache)
     save_manual_state(state)
 
     return {
@@ -334,7 +374,9 @@ def collect_manual_bracket(bracket: str, login: str, password: str) -> dict:
     }
 
 
-def _advance_manual_if_complete(state: dict, bracket: str, login: str, password: str) -> int:
+def _advance_manual_if_complete(
+    state: dict, bracket: str, login: str, password: str, cache: dict | None = None
+) -> int:
     """Advance the bracket if its current round is done. Returns rounds advanced."""
     if state[bracket].get("finalists"):
         return 0
@@ -350,7 +392,7 @@ def _advance_manual_if_complete(state: dict, bracket: str, login: str, password:
     else:
         advance_bracket(state, bracket)
         if not state[bracket].get("finalists"):
-            submit_round(state, bracket, login, password, save_fn=save_manual_state)
+            submit_round(state, bracket, login, password, save_fn=save_manual_state, cache=cache)
         return 2
 
 
@@ -432,6 +474,7 @@ def start_tournament(
     Returns the updated state dict.
     """
     state = reset_state(steam_games, nonsteam_games, pingback_url)
+    cache = load_trends_cache()
 
     for bracket, games in (("steam", steam_games), ("non_steam", nonsteam_games)):
         if not games:
@@ -447,7 +490,9 @@ def start_tournament(
                 "tasks":     [],
                 "bye_games": [],
             }
-            submit_round(state, bracket, login, password)
+            submit_round(state, bracket, login, password, cache=cache)
+
+    save_trends_cache(cache)
 
     # Handle case where both brackets finished immediately (e.g., 1 game each)
     both_done = all(bool(state[b].get("finalists")) or not state[b]["pool"] for b in BRACKETS)
