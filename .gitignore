@@ -8,3 +8,5 @@ __pycache__/
 csv_nonsteam.ipynb
 csv_steam.ipynb
 game_ranking/cache/dataforseo_creds.json
+game_ranking/logs/
+.claude/
