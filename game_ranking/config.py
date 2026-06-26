@@ -16,7 +16,9 @@ STEAMSPY_CACHE_FILE      = CACHE_DIR / 'steamspy_cache.csv'
 TOURNAMENT_ANCHOR_FILE   = CACHE_DIR / 'tournament_anchor.json'
 TOURNAMENT_STATE_FILE        = CACHE_DIR / 'tournament_state.json'
 MANUAL_TOURNAMENT_STATE_FILE = CACHE_DIR / 'manual_tournament_state.json'
-REFRESH_TRENDS_STATE_FILE    = CACHE_DIR / 'refresh_trends_state.json'
+REFRESH_TRENDS_STATE_FILE         = CACHE_DIR / 'refresh_trends_state.json'
+REFRESH_TRENDS_STATE_FILE_STEAM   = CACHE_DIR / 'refresh_trends_state_steam.json'
+REFRESH_TRENDS_STATE_FILE_NONSTEAM = CACHE_DIR / 'refresh_trends_state_nonsteam.json'
 
 
 def get_latest_steam_csv() -> "Path":

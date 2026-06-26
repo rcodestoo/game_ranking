@@ -50,40 +50,46 @@ def _empty_state() -> dict:
     }
 
 
-def load_state() -> dict:
+def _resolve_state_file(state_file) -> Path:
+    return Path(state_file) if state_file is not None else REFRESH_TRENDS_STATE_FILE
+
+
+def load_state(state_file=None) -> dict:
     """Return refresh state from file, or a fresh idle state if missing/corrupt."""
-    if REFRESH_TRENDS_STATE_FILE.exists():
+    f = _resolve_state_file(state_file)
+    if f.exists():
         try:
-            return json.loads(REFRESH_TRENDS_STATE_FILE.read_text(encoding="utf-8"))
+            return json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             pass
     return _empty_state()
 
 
-def save_state(state: dict) -> None:
+def save_state(state: dict, state_file=None) -> None:
     """Atomically write state to the state file."""
-    REFRESH_TRENDS_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = REFRESH_TRENDS_STATE_FILE.with_suffix(".tmp")
+    f = _resolve_state_file(state_file)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(REFRESH_TRENDS_STATE_FILE)
+    tmp.replace(f)
 
 
-def reset_state() -> None:
+def reset_state(state_file=None) -> None:
     """Reset state file to idle (discard any pending tasks)."""
-    save_state(_empty_state())
+    save_state(_empty_state(), state_file=state_file)
 
 
-def save_refresh_anchor(anchor: str) -> None:
-    """Persist the selected anchor into refresh_trends_state.json (independent of tournament)."""
-    state = load_state()
+def save_refresh_anchor(anchor: str, state_file=None) -> None:
+    """Persist the selected anchor into the refresh state file (independent of tournament)."""
+    state = load_state(state_file=state_file)
     state["anchor"] = anchor
     state["anchor_cleaned"] = strip_edition_suffix(anchor)
-    save_state(state)
+    save_state(state, state_file=state_file)
 
 
-def load_refresh_anchor() -> str | None:
+def load_refresh_anchor(state_file=None) -> str | None:
     """Return the last-saved refresh anchor, or None if never set."""
-    return load_state().get("anchor")
+    return load_state(state_file=state_file).get("anchor")
 
 
 # ── Anchor pool ───────────────────────────────────────────────────────────────
@@ -151,6 +157,7 @@ def submit_refresh(
     login: str,
     password: str,
     source: str = "refresh_all",
+    state_file=None,
 ) -> dict:
     """
     Build one DataForSEO task per game (keywords=[cleaned_anchor, cleaned_game]),
@@ -213,7 +220,7 @@ def submit_refresh(
         "collected_count": 0,
         "error_count":     0,
     }
-    save_state(state)
+    save_state(state, state_file=state_file)
     return state
 
 
@@ -223,6 +230,7 @@ def collect_refresh(
     login: str,
     password: str,
     on_task_complete=None,
+    state_file=None,
 ) -> dict:
     """
     Poll DataForSEO tasks_ready, fetch completed tasks, normalize scores.
@@ -243,7 +251,7 @@ def collect_refresh(
 
     Caller is responsible for applying scores to session_state and writing CSV.
     """
-    state = load_state()
+    state = load_state(state_file=state_file)
     if state["status"] not in ("submitted", "collecting"):
         return {"checked": 0, "collected": 0, "errors": 0, "complete": False, "scores": {}}
 
@@ -258,7 +266,7 @@ def collect_refresh(
 
     if not pending_map:
         state["status"] = "complete"
-        save_state(state)
+        save_state(state, state_file=state_file)
         return {
             "checked": 0, "collected": 0, "errors": 0,
             "complete": True, "scores": _extract_scores(state),
@@ -322,7 +330,7 @@ def collect_refresh(
     if not still_pending:
         state["status"] = "complete"
 
-    save_state(state)
+    save_state(state, state_file=state_file)
 
     return {
         "checked":   checked,

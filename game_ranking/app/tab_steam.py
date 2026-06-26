@@ -27,7 +27,7 @@ from pipelines.refresh_trends_pipeline import (
     collect_refresh,
     write_scores_to_csv,
 )
-from config import TRENDS_CACHE_FILE
+from config import TRENDS_CACHE_FILE, REFRESH_TRENDS_STATE_FILE_STEAM
 from pipelines.trends_pipeline import load_tournament_anchor
 
 
@@ -248,17 +248,17 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
     with results_tab:
         # Compute outside columns so variables are reachable in the collect handler below
-        _refresh_state  = load_refresh_state()
+        _refresh_state  = load_refresh_state(state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
         _login, _password = load_credentials()
         _has_creds      = bool(_login and _password)
         _effective_anchor = (
             st.session_state.get("steam_anchor_selectbox")
-            or load_refresh_anchor()
+            or load_refresh_anchor(state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
         )
         _show_collect   = _refresh_state["status"] in ("submitted", "collecting")
         _pending_count  = sum(1 for t in _refresh_state["tasks"] if t["status"] == "pending") if _show_collect else 0
 
-        # ── Shared collect loop — called after submit and from the fallback button ─
+        # ── Collect loop for the Steam tab ───────────────────────────────────────
         def _run_collect_loop(grand_total: int) -> None:
             _POLL_SLEEP  = 120  # seconds between tasks_ready calls (2 min)
             _MAX_POLLS   = 200  # safety ceiling (~10 min at 3 s/poll)
@@ -271,6 +271,8 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
 
             def _on_task(game: str, score: int, n_done: int, n_total: int, failed: bool) -> None:
                 _all_scores[game] = score
+                # Update session state immediately so the table reflects the score on rerun
+                st.session_state.nonsteam_trends[game] = score
                 pct = len(_all_scores) / max(grand_total, 1)
                 _bar.progress(min(pct, 1.0), text=f"Collecting… {len(_all_scores)} / {grand_total}")
                 icon = "⚠️" if failed else "✅"
@@ -280,14 +282,18 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             _poll_num = 0
             while _poll_num < _MAX_POLLS:
                 _poll_num += 1
-                _result = collect_refresh(_login, _password, on_task_complete=_on_task)
+                _result = collect_refresh(_login, _password, on_task_complete=_on_task,
+                                          state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
 
                 if _result["complete"]:
                     _bar.progress(1.0, text=f"All done — {_result['collected']} collected, {_result['errors']} failed")
                     _status_line.empty()
                     break
 
-                _remaining = sum(1 for t in load_refresh_state()["tasks"] if t["status"] == "pending")
+                _remaining = sum(
+                    1 for t in load_refresh_state(state_file=REFRESH_TRENDS_STATE_FILE_STEAM)["tasks"]
+                    if t["status"] == "pending"
+                )
                 if _remaining == 0:
                     _bar.progress(1.0, text="All done")
                     _status_line.empty()
@@ -302,8 +308,6 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                 _bar.progress(1.0, text="Timed out — some tasks may still be pending")
 
             if _all_scores:
-                for game, score in _all_scores.items():
-                    st.session_state.nonsteam_trends[game] = score
                 _cached_ts = load_trends_cache_timestamps(TRENDS_CACHE_FILE)
                 write_scores_to_csv(
                     _all_scores,
@@ -311,7 +315,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                     list(_all_scores.keys()),
                     _cached_ts,
                 )
-                st.session_state.trends_last_fetched_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.session_state.steam_trends_last_fetched_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             _ok  = sum(1 for s in _all_scores.values() if s > 0)
             _bad = sum(1 for s in _all_scores.values() if s == 0)
             st.toast(f"Done! {_ok} collected, {_bad} zero-score", icon="✅")
@@ -333,7 +337,8 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                     st.warning("No anchor set. Run the tournament first or select an anchor from the dropdown.")
                 else:
                     _state = submit_refresh(games_to_fetch, _effective_anchor, _login, _password,
-                                            source="refresh_all")
+                                            source="refresh_all",
+                                            state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
                     n_submitted = sum(1 for t in _state["tasks"] if t["status"] == "pending")
                     n_failed    = sum(1 for t in _state["tasks"] if t["status"] == "failed")
                     if n_failed:
@@ -348,7 +353,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                 if _show_collect else False
             )
 
-            _ts = st.session_state.get("trends_last_fetched_at")
+            _ts = st.session_state.get("steam_trends_last_fetched_at")
             if _ts:
                 try:
                     _dt = dt.datetime.strptime(_ts, "%Y-%m-%d %H:%M:%S")
@@ -361,7 +366,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
             st.caption(f"Showing **{len(df_filtered_steam)}** of **{len(df_ranked)}**")
             st.caption(f"Source: *{steam_source_name}*")
             _anchor_pool_meta = load_anchor_pool()
-            _saved_anchor = load_refresh_anchor()
+            _saved_anchor = load_refresh_anchor(state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
             if _anchor_pool_meta:
                 _default_idx = _anchor_pool_meta.index(_saved_anchor) if _saved_anchor in _anchor_pool_meta else 0
                 _selected_anchor = st.selectbox(
@@ -370,7 +375,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                     help="Reference game for normalizing Trends scores (anchor = 100)",
                 )
                 if _selected_anchor != _saved_anchor:
-                    save_refresh_anchor(_selected_anchor)
+                    save_refresh_anchor(_selected_anchor, state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
                     st.rerun()
             else:
                 if _saved_anchor:
@@ -440,7 +445,8 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
                     st.warning("No anchor set. Run the tournament first or select an anchor from the dropdown.")
                 else:
                     _state = submit_refresh(_selected, _effective_anchor, _login, _password,
-                                            source="refresh_selected")
+                                            source="refresh_selected",
+                                            state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
                     n_submitted = sum(1 for t in _state["tasks"] if t["status"] == "pending")
                     if n_submitted:
                         _run_collect_loop(n_submitted)
