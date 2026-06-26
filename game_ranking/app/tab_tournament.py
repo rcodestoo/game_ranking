@@ -85,7 +85,7 @@ def _render_bracket_rounds(bracket_data: dict) -> None:
                 "Status":   t.get("status", "pending"),
             })
         if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
 def _creds_from_secrets() -> tuple[str, str] | None:
@@ -327,7 +327,7 @@ def render():
                             "Status":   _t.get("status", "pending"),
                         })
                     if _rows:
-                        st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True)
 
         # Reset must be checked BEFORE the loop so a click during sleep is caught on the next rerun
         if st.button("🗑 Reset Tournament", key="reset_running_btn"):
@@ -377,7 +377,7 @@ def render():
                             "Status":   _t.get("status", "—"),
                         })
                     if _rows:
-                        st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(_rows), width="stretch", hide_index=True)
 
         st.info("Anchor pool is available — select your anchor in the Steam or Non-Steam tab.")
 
