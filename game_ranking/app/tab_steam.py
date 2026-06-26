@@ -254,6 +254,7 @@ def render(global_date_min: dt.date, global_date_max: dt.date):
         _effective_anchor = (
             st.session_state.get("steam_anchor_selectbox")
             or load_refresh_anchor(state_file=REFRESH_TRENDS_STATE_FILE_STEAM)
+            or load_refresh_anchor()  # fallback: legacy shared file from before per-tab split
         )
         _show_collect   = _refresh_state["status"] in ("submitted", "collecting")
         _pending_count  = sum(1 for t in _refresh_state["tasks"] if t["status"] == "pending") if _show_collect else 0
