@@ -25,6 +25,7 @@ from calculation.dataforseo_trends import (
     post_tasks_bulk,
     fetch_tasks_ready,
     fetch_task_result,
+    check_task,
     GAMES_CATEGORY,
 )
 from calculation.trends_tournament import strip_edition_suffix
@@ -274,6 +275,14 @@ def collect_refresh(
 
     ready_ids = fetch_tasks_ready(login, password)
     our_ready = set(pending_map.keys()) & ready_ids
+
+    if len(ready_ids) >= 1000:
+        missing_from_ready = set(pending_map.keys()) - our_ready
+        if missing_from_ready:
+            log.info("tasks_ready saturated (1000 cap); checking %d pending tasks directly", len(missing_from_ready))
+            for tid in missing_from_ready:
+                if check_task(tid, login, password) is not None:
+                    our_ready.add(tid)
 
     checked   = len(our_ready)
     collected = 0

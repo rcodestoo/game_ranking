@@ -282,6 +282,35 @@ def fetch_tasks_ready(login: str, password: str) -> set[str]:
     return ready_ids
 
 
+def check_task(task_id: str, login: str, password: str) -> dict | None:
+    """
+    Single non-blocking GET to task_get/{task_id}.
+    Returns the task dict if status_code == 20000 (complete), else None.
+    Use this when tasks_ready is saturated (>1000 queued tasks).
+    """
+    try:
+        resp = requests.get(
+            f"{TASK_GET_URL}/{task_id}",
+            auth=(login, password),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        if _is_dns_error(e):
+            return None
+        log.warning("check_task %s failed: %s", task_id, e)
+        return None
+
+    tasks = data.get("tasks", [])
+    if not tasks:
+        return None
+    task = tasks[0]
+    if task.get("status_code") == 20000:
+        return task
+    return None
+
+
 def fetch_task_result(
     task_id: str,
     kw_list: list[str],
